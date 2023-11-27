@@ -22,7 +22,7 @@ MIN_LE = 14.
 MAX_LE = 18.
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
-N_THROWN = 80
+N_THROWN = 8
 THROW_RADIUS = 300. #meters per 12eev
 
 #CHASM inputs

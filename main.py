@@ -7,6 +7,7 @@ from datafiles import get_data_files, preceding_noise_file
 from throw_shower_params import gen_params_in_bins, MCParams
 from process_showers import add_triggers_to_dataframe
 from tyro_fit import plot_event
+from import_nightsky_data import init_niche_nightsky_df
 from config import CounterConfig, COUNTER_POSITIONS
 
 def plot_generator(sim_datafram: pd.DataFrame) -> None:
@@ -29,7 +30,7 @@ def plot_generator(sim_datafram: pd.DataFrame) -> None:
 def process_energy_bin(params: MCParams, cfg: CounterConfig) -> pd.DataFrame:
     '''This function generates MC for one MCParams set of parameters.
     '''
-    print(f'Processing 10^{params.lEmin} eV < E < 10^{params.lEmax} eV...')
+    print(f'Processing mc for 10^{params.lEmin} eV < E < 10^{params.lEmax} eV...')
     return add_triggers_to_dataframe(params.gen_event_params(), cfg)
 
 def main(data_date_and_time: str) -> list[pd.DataFrame]:
@@ -42,6 +43,10 @@ def main(data_date_and_time: str) -> list[pd.DataFrame]:
     #set config object with counters active in data part
     cfg = CounterConfig(data_files, noise_files)
 
+    #get real data events
+    print('Processing nightsky data...')
+    ns_df = init_niche_nightsky_df(cfg)
+
     #Throw shower parameters
     shower_params = gen_params_in_bins(cfg)
 
@@ -49,9 +54,9 @@ def main(data_date_and_time: str) -> list[pd.DataFrame]:
     shower_dataframes = []
     for params in shower_params:
         shower_dataframes.append(process_energy_bin(params, cfg))
-    return shower_dataframes
+    return shower_dataframes, ns_df, cfg
 
 if __name__  == '__main__':
     date_time = sys.argv[1]
     np.seterr(all="ignore")
-    df = main(str(date_time))
+    df, ns, cfg = main(str(date_time))
