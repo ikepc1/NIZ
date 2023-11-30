@@ -7,7 +7,7 @@ from tunka_fit import TunkaPMTPulse
 from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
 from noise import random_noise
-from config import CounterConfig, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE 
+from config import CounterConfig, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:
     '''This method calculates the time bins needed to fit photon temporal
@@ -125,8 +125,7 @@ class TriggerSim:
         FADC_count_array = np.empty((len(self.cfg.active_counters), bins.size))
         for i, (pes ,fp) in enumerate(zip(pmt_electrons, self.cfg.fadc_per_pe.values())):
             FADC_count_array[i] = fp * pes[::int(NICHE_TIMEBIN_SIZE)]
-        fadc_counts = np.round(FADC_count_array)+ 2048
-        fadc_counts[fadc_counts>4096.] = 4096.
+        fadc_counts = np.round(FADC_count_array)
         return fadc_counts , bins
     
     @staticmethod
@@ -160,7 +159,7 @@ class TriggerSim:
         trigs = np.full_like(fadc_counts, False, dtype=bool)
         window_means, means, vars = TriggerSim.rolling_mean_and_var(fadc_counts)
         # window_means =Trigger.window_means(fadc_counts)
-        trigs[WAVEFORM_SIZE:-TRIGGER_WIDTH] =  (window_means - means)**2  > TRIGGER_VARIANCE * vars
+        trigs[WAVEFORM_SIZE+TRIGGER_WIDTH:] =  (window_means - means)**2  > TRIGGER_VARIANCE * vars
         return trigs
 
     def gen_triggers(self, fadc_counts: np.ndarray, timebins: np.ndarray) -> tuple[np.ndarray]:
@@ -176,8 +175,10 @@ class TriggerSim:
             trigs[i] = trigger_array.any()
             if trigs[i]:
                 trigger_bin = np.argmax(trigger_array)
-                snapshots[i] = counts[trigger_bin-500:trigger_bin+524]
-                sh_timebins[i] = counter[trigger_bin-500:trigger_bin+524]
+                snap_starti = trigger_bin - TRIGGER_POSITION
+                snap_stopi = trigger_bin + WAVEFORM_SIZE - TRIGGER_POSITION
+                snapshots[i] = counts[snap_starti:snap_stopi]
+                sh_timebins[i] = counter[snap_starti:snap_stopi]
             else:
                 snapshots[i][:] = -1.
                 sh_timebins[i][:] = -1.
@@ -212,4 +213,5 @@ def gen_niche_trigger(ckv: CherenkovOutput) -> NicheTriggers:
     electrons = ts.gen_electron_signal(incident_photons, photon_times)
     fadc_counts, NICHE_bins = ts.gen_FADC_counts(electrons, photon_times)
     fadc_counts += generate_background(ckv.cfg.noise_files)
+    fadc_counts[fadc_counts>4096.] = 4096.
     return NicheTriggers(*ts.gen_triggers(fadc_counts, NICHE_bins))
