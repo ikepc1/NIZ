@@ -23,7 +23,7 @@ MAX_LE = 18.
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
 N_THROWN = 8
-THROW_RADIUS = 300. #meters per 12eev
+THROW_RADIUS = 300. #meters per 10^12
 
 #CHASM inputs
 MIN_WAVELENGTH = 300.
@@ -139,35 +139,35 @@ COUNTER_PMT_DELAY = {'curie':    40., # in ns
                     'rossi':     40.,
                     'rubin':     40.}
 
-COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
-                        'dirac':     1.,
-                        'einstein':  1.,
-                        'feynman':   1.,
-                        'meitner':   1.,
-                        'newton':    1.,
-                        'noether':   1.,
-                        'rutherford':1.,
-                        'wu':        1.,
-                        'yukawa':    1.,
-                        'bardeen':   1.,
-                        'bell':      1.,
-                        'rossi':     1.,
-                        'rubin':     1.}
+# COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
+#                         'dirac':     1.,
+#                         'einstein':  1.,
+#                         'feynman':   1.,
+#                         'meitner':   1.,
+#                         'newton':    1.,
+#                         'noether':   1.,
+#                         'rutherford':1.,
+#                         'wu':        1.,
+#                         'yukawa':    1.,
+#                         'bardeen':   1.,
+#                         'bell':      1.,
+#                         'rossi':     1.,
+#                         'rubin':     1.}
 
-# COUNTER_FADC_PER_PE =  {'curie':     10., # number of fadc counts per PE
-#                         'dirac':     10.,
-#                         'einstein':  10.,
-#                         'feynman':   10.,
-#                         'meitner':   10.,
-#                         'newton':    10.,
-#                         'noether':   10.,
-#                         'rutherford':10.,
-#                         'wu':        10.,
-#                         'yukawa':    10.,
-#                         'bardeen':   10.,
-#                         'bell':      10.,
-#                         'rossi':     10.,
-#                         'rubin':     10.}
+COUNTER_FADC_PER_PE =  {'curie':     10., # number of fadc counts per PE
+                        'dirac':     10.,
+                        'einstein':  10.,
+                        'feynman':   10.,
+                        'meitner':   10.,
+                        'newton':    10.,
+                        'noether':   10.,
+                        'rutherford':10.,
+                        'wu':        10.,
+                        'yukawa':    10.,
+                        'bardeen':   10.,
+                        'bell':      10.,
+                        'rossi':     10.,
+                        'rubin':     10.}
 @dataclass
 class CounterConfig:
     '''This is the container for all the constants related to particular counters for

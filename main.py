@@ -2,12 +2,16 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy
+from dataclasses import dataclass
 
 from datafiles import get_data_files, preceding_noise_file
 from throw_shower_params import gen_params_in_bins, MCParams
 from process_showers import add_triggers_to_dataframe
 from tyro_fit import plot_event
 from import_nightsky_data import init_niche_nightsky_df
+from recon import run_dataframe_recon
+from niche_plane import get_event_from_df
 from config import CounterConfig, COUNTER_POSITIONS
 
 def plot_generator(sim_datafram: pd.DataFrame) -> None:
@@ -33,7 +37,15 @@ def process_energy_bin(params: MCParams, cfg: CounterConfig) -> pd.DataFrame:
     print(f'Processing mc for 10^{params.lEmin} eV < E < 10^{params.lEmax} eV...')
     return add_triggers_to_dataframe(params.gen_event_params(), cfg)
 
-def main(data_date_and_time: str) -> list[pd.DataFrame]:
+@dataclass
+class MCRun:
+    '''This is the container for the results of an mc run.
+    '''
+    cfg: CounterConfig
+    mc: list[pd.DataFrame]
+    ns: pd.DataFrame
+
+def main(data_date_and_time: str) -> MCRun:
     '''mizzain.
     '''
     #get data files and corresponding noise files for given night
@@ -43,9 +55,12 @@ def main(data_date_and_time: str) -> list[pd.DataFrame]:
     #set config object with counters active in data part
     cfg = CounterConfig(data_files, noise_files)
 
-    #get real data events
+    #get real data events and perform reconstruction
     print('Processing nightsky data...')
     ns_df = init_niche_nightsky_df(cfg)
+
+    #recon real data
+    run_dataframe_recon(ns_df)
 
     #Throw shower parameters
     shower_params = gen_params_in_bins(cfg)
@@ -53,10 +68,31 @@ def main(data_date_and_time: str) -> list[pd.DataFrame]:
     #Simulate showers for each energy bin
     shower_dataframes = []
     for params in shower_params:
-        shower_dataframes.append(process_energy_bin(params, cfg))
-    return shower_dataframes, ns_df, cfg
+        df = process_energy_bin(params, cfg)
+        run_dataframe_recon(df)
+        shower_dataframes.append(df)
+
+    return MCRun(cfg, shower_dataframes, ns_df)
+
+def event_ntriggers(df: pd.DataFrame) -> np.ndarray:
+    lens = []
+    for i in range(len(df)):
+        lens.append(len(get_event_from_df(df,i)))
+    return np.array(lens)
 
 if __name__  == '__main__':
     date_time = sys.argv[1]
     np.seterr(all="ignore")
-    df, ns, cfg = main(str(date_time))
+
+    mc = main(str(date_time))
+
+    mc_ev_lens = event_ntriggers(mc.mc[0])
+    ns_ev_lens = event_ntriggers(mc.ns)
+    bins = .5 + np.arange(13)
+
+    plt.ion()
+    plt.figure()
+    plt.hist(mc_ev_lens,label = 'mc events',density=True, histtype='step',bins=bins)
+    plt.hist(ns_ev_lens,label = 'ns events',density=True, histtype='step',bins=bins)
+    plt.legend()
+

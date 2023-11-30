@@ -6,7 +6,7 @@ from scipy.optimize import curve_fit
 from dataclasses import dataclass
 
 from config import COUNTER_POSITIONS, CounterConfig
-# from niche_fit import NicheFit, NicheRaw
+from niche_fit import NicheFit, NicheRaw
 
 def hex_to_s(hex_ts: str) -> float:
     '''This function converts the hexadecimal string values to a value in 
@@ -33,25 +33,19 @@ def plot_detectors() -> None:
 class TyroFit:
     '''This is the container for the results of a Tyro fit.
     '''
-    xfit: np.ndarray
-    yfit: np.ndarray
-    zfit: np.ndarray
     t: np.ndarray
     pa: np.ndarray
     counter_pos: np.ndarray
 
-def tyro(event: pd.Series, cfg: CounterConfig) -> TyroFit:
+def tyro(event: list[NicheFit]) -> TyroFit:
     '''This function returns the Tyro estimate for the axis position.
     '''
-    PAs = np.array([fit.intsignal for fit in event[event.notna()]])
-    times = np.array([hex_to_s(fit.__str__()[-8:]) for fit in event[event.notna()]])
-    positions = cfg.positions_array[event.notna()]
+    PAs = np.array([fit.intsignal for fit in event])
+    times = np.array([fit.trigtime() for fit in event])
+    positions = np.array([fit.position for fit in event])
     sig = 1 / (PAs/PAs.sum())
-    ts = np.array(times - times.min())
-    X,_ = curve_fit(linear_function, ts, positions[:,0], sigma = sig)
-    Y,_ = curve_fit(linear_function, ts, positions[:,1], sigma = sig)
-    Z,_ = curve_fit(linear_function, ts, positions[:,2], sigma = sig)
-    return TyroFit(X, Y, Z, ts, PAs, positions)
+    # ts = np.array(times - times.min())
+    return TyroFit(times, PAs, positions)
 
 def plot_triggers(fit: TyroFit) -> None:
     '''This function plots the detectors that triggered where the size of 
@@ -60,14 +54,6 @@ def plot_triggers(fit: TyroFit) -> None:
     plt.scatter(fit.counter_pos[:,0], fit.counter_pos[:,1], s = fit.pa, c=fit.t)#, cmap = 'inferno')
     plt.colorbar(label='nanoseconds')
 
-def plot_axis_estimate(fit: TyroFit) -> None:
-    '''This function plots the estimate for the 2d projection of the shower
-    axis.
-    '''
-    x = linear_function(fit.t, *fit.xfit)
-    y = linear_function(fit.t, *fit.yfit)
-    plt.plot(x,y,c='k',linewidth=.5)
-
 def plot_event(fit: TyroFit) -> None:
     '''This function plots an individual Niche event.
     '''
@@ -75,7 +61,6 @@ def plot_event(fit: TyroFit) -> None:
     plt.figure()
     plot_detectors()
     plot_triggers(fit)
-    plot_axis_estimate(fit)
     plt.xlabel('x (m)')
     plt.ylabel('y (m)')
     plt.title('Niche Event')

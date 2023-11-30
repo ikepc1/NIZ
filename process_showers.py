@@ -38,8 +38,8 @@ def add_triggers_to_dataframe(shower_df: pd.DataFrame, cfg: CounterConfig) -> pd
                 if trig.trigs.any():
                     print('trigger')
                     add_nfits_to_df(trig,shower_df,i)
-                    if len(trig.names) > 1:
-                        shower_df.loc[i,'Fit'] = tyro(shower_df.loc[i][12:], cfg)
-                        shower_df.loc[i,'Plane Fit'] = NichePlane(get_event_from_df(shower_df,i))
+                    # if len(trig.names) > 1:
+                    #     shower_df.loc[i,'Fit'] = tyro(shower_df.loc[i][12:], cfg)
+                    #     shower_df.loc[i,'Plane Fit'] = NichePlane(get_event_from_df(shower_df,i))
                 bar()
     return shower_df

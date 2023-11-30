@@ -1,20 +1,25 @@
 import pandas as pd
 from pathlib import Path
 import numpy as np
+from multiprocessing import Pool, cpu_count
+from alive_progress import alive_bar
 
 from niche_raw import NicheRaw
 from niche_fit import NicheFit
-from niche_plane import NichePlane
 from niche_bin import bin_to_raw
-from tyro_fit import tyro
+from recon import run_multiprocessing
 from config import CounterConfig
+
+def make_nfit(nraw: NicheRaw) -> NicheFit:
+    return NicheFit(nraw)
 
 def get_events_from_datafile(file: Path) -> list[NicheFit]:
     '''This function grabs the events in a niche nightsky datafile.
     '''
     with file.open('rb') as open_file:
         nraws = list(set(bin_to_raw(open_file.read(), file.parent.name, retfit=False)))
-    return [NicheFit(nraw) for nraw in nraws]
+    nfits = run_multiprocessing(NicheFit, nraws)
+    return nfits
 
 def get_events(cfg: CounterConfig) -> dict[str, list[NicheRaw]]:
     '''This function creates a dictionary of nraw objects for all the events
@@ -22,6 +27,7 @@ def get_events(cfg: CounterConfig) -> dict[str, list[NicheRaw]]:
     '''
     event_dict = {}
     for data_file in cfg.data_files:
+        print(f'Getting fits for {data_file.parent.name}')
         event_dict[data_file.parent.name] = get_events_from_datafile(data_file)
     return event_dict
 
@@ -84,13 +90,12 @@ def init_niche_nightsky_df(cfg: CounterConfig) -> pd.DataFrame:
     '''
     events = get_events(cfg)
     matches = match_times(events)
-    er = empty_row(cfg)
     rows = []
     for match in matches:
-        row = er
+        row = empty_row(cfg)
         for nraw in match:
             row[nraw.name] = nraw
-        if len(match) > 0:
-            row['Plane Fit'] = NichePlane(list(match))
+        # if len(match) > 0:
+        #     row['Plane Fit'] = NichePlane(list(match))
         rows.append(row)
     return pd.DataFrame(rows)

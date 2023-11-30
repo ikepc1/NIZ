@@ -2,6 +2,9 @@ import numpy as np
 from niche_raw import NicheRaw
 from scipy.optimize import curve_fit
 from scipy.integrate import quad
+from scipy.special import seterr
+seterr(all="ignore")
+from config import COUNTER_POSITIONS_DICT
 
 class NicheFit(NicheRaw):
     """
@@ -13,6 +16,7 @@ class NicheFit(NicheRaw):
             if not attr.startswith('__'):
                 setattr(s,attr,getattr(niche_raw_obj,attr))
 
+        s.position = np.array(COUNTER_POSITIONS_DICT[s.name])
         r = niche_raw_obj
         bl0 = (s.waveform[:20].mean()+s.waveform[-20:].mean())/2
         t00 = np.argmax(s.waveform)
