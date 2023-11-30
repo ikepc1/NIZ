@@ -37,14 +37,32 @@ class TyroFit:
     pa: np.ndarray
     counter_pos: np.ndarray
 
+    @property
+    def core_estimate(self) -> np.ndarray:
+        '''This property is the weighted average of the counter positions.
+        '''
+        return np.average(self.counter_pos, weights = self.pa, axis = 0)
+    
+    @property
+    def has_contained_core(self) -> bool:
+        '''This property is whether the core is completely contained by the 
+        active counters.
+        '''
+        pos_biggest = self.counter_pos[self.pa.argmax()]
+        is_x_contained = self.counter_pos[:,0].min() < pos_biggest[0] < self.counter_pos[:,0].max()
+        is_y_contained = self.counter_pos[:,1].min() < pos_biggest[1] < self.counter_pos[:,1].max()
+        return is_x_contained and is_y_contained
+
+
 def tyro(event: list[NicheFit]) -> TyroFit:
     '''This function returns the Tyro estimate for the axis position.
     '''
     PAs = np.array([fit.intsignal for fit in event])
-    times = np.array([fit.trigtime() for fit in event])
+    # times = np.array([fit.trigtime() for fit in event])
+    times = np.array([hex_to_s(fit.__str__()[-8:]) for fit in event])
     positions = np.array([fit.position for fit in event])
     sig = 1 / (PAs/PAs.sum())
-    # ts = np.array(times - times.min())
+    times = np.array(times - times.min())
     return TyroFit(times, PAs, positions)
 
 def plot_triggers(fit: TyroFit) -> None:

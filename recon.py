@@ -51,8 +51,6 @@ def run_dataframe_recon(df: pd.DataFrame) -> None:
     '''This function reconstructs each event in the dataframe.
     '''
     inputs, indices = compile_nfit_inputs(df)
-    print(len(indices))
-    print(len(inputs))
     print('Adding Tyros...')
     tyros = run_multiprocessing(tyro, inputs)
     print('Adding plane fits...')

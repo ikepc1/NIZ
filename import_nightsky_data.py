@@ -27,7 +27,7 @@ def get_events(cfg: CounterConfig) -> dict[str, list[NicheRaw]]:
     '''
     event_dict = {}
     for data_file in cfg.data_files:
-        print(f'Getting fits for {data_file.parent.name}')
+        print(f'Getting pulse fits for {data_file.parent.name}')
         event_dict[data_file.parent.name] = get_events_from_datafile(data_file)
     return event_dict
 
