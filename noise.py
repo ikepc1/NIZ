@@ -1,6 +1,7 @@
 from niche_bin import bin_to_raw
 import numpy as np
 from pathlib import Path
+from scipy.signal import argrelextrema
 
 from config import NICHE_TIMEBIN_SIZE, WAVEFORM_SIZE
 
@@ -12,7 +13,7 @@ def read_niche_file(filepath: Path) -> np.ndarray:
     return np.vstack([nraw.waveform for nraw in nraw_list])
 
 def trigger_times(filepath: Path) -> np.ndarray:
-    '''This function reads a noise file and returns a numoy array of the traces.
+    '''This function reads a niche file and returns a numoy array of the trigger times.
     '''
     with filepath.open('rb') as open_file:
         nraw_list = list(set(bin_to_raw(open_file.read(), filepath.parent.name, retfit=False)))
@@ -104,8 +105,11 @@ def random_noise(noisefile: Path, N_windows: int = 1) -> np.ndarray:
     #Create output array
     noise_output =np.empty(WAVEFORM_SIZE*N_windows)
 
-    #Shift phase angles so the 3rd term in ft is zero phase
-    shift = phase_shift(phase_angles,2)
+    #Find index of murmur mode
+    im = argrelextrema(ft.mean(axis=0), np.greater)[0][0]
+
+    #Shift phase angles so the murmur term in ft is zero phase
+    shift = phase_shift(phase_angles,im)
     shifted_angles = phase_angles - shift
 
     #Generate random phases from ecdfs created from shifted phases in data, unshift
@@ -114,7 +118,7 @@ def random_noise(noisefile: Path, N_windows: int = 1) -> np.ndarray:
     #Generate random power spectrum values from ecdfs created from data
     gen_ft = random_values_from_ecdf(np.abs(ft),N_windows)
 
-    #Take onle the phases for the positive frequencies
+    #Take only the phases for the positive frequencies
     random_phases = random_phases[freqs>0]
     #Loop through the desired number of trigger windows to stack
     for i in range(N_windows):
@@ -128,8 +132,8 @@ def random_noise(noisefile: Path, N_windows: int = 1) -> np.ndarray:
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.ion()
-    p_open = Path('/home/isaac/niche_data/20190509/curie/20190509060703.bg.bin')
-    p_closed = Path('/home/isaac/niche_data/20190509/curie/20190509060628.bg.bin')
+    p_open = Path('/home/isaac/niche_data/20190509/bell/20190509060703.bg.bin')
+    p_closed = Path('/home/isaac/niche_data/20190509/bell/20190509060628.bg.bin')
     noise_open = read_niche_file(p_open)
     noise_closed = read_niche_file(p_closed)
     ft_o = noise_fft(noise_open)
