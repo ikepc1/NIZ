@@ -113,7 +113,7 @@ def random_noise(noisefile: Path, N_windows: int = 1) -> np.ndarray:
     shifted_angles = phase_angles - shift
 
     #Generate random phases from ecdfs created from shifted phases in data, unshift
-    random_phases = random_phases_from_ecdf(shifted_angles) + shift[0]
+    random_phases = random_phases_from_ecdf(shifted_angles)
 
     #Generate random power spectrum values from ecdfs created from data
     gen_ft = random_values_from_ecdf(np.abs(ft),N_windows)
@@ -150,8 +150,8 @@ if __name__ == '__main__':
     r = random_noise(p_open,5)
 
     plt.figure()
-    plt.plot(freq[freq>0.], ft_o[freq>0.], label = 'noise open')
-    plt.plot(freq[freq>0.], ft_c[freq>0.], label = 'noise closed')
+    plt.plot(freq[freq>0.], ft_o[freq>0.], label = 'noise open', c='k', linestyle='solid')
+    plt.plot(freq[freq>0.], ft_c[freq>0.], label = 'noise closed', c='k', linestyle='dashed')
     # plt.plot(freq[freq>0.], ft_s[freq>0.], label = 'noise sim')
     # plt.plot(freq[freq>0.], ft_sc[freq>0.], label = 'noise sim closed')
     
@@ -165,13 +165,16 @@ if __name__ == '__main__':
         traces_to_avg[i] = np.abs(np.fft.fft(long_trace[starti:starti + WAVEFORM_SIZE]))
         traces_to_avg_c[i] = np.abs(np.fft.fft(long_trace_c[starti:starti + WAVEFORM_SIZE]))
         # plt.plot(freq[freq>0], np.abs(np.fft.fft(r[i:i+1024]))[freq>0],label=f'start index: {i}')
-    plt.plot(freq[freq>0.], traces_to_avg.mean(axis=0)[freq>0.], label = 'avg sim open')
-    plt.plot(freq[freq>0.], traces_to_avg_c.mean(axis=0)[freq>0.], label = 'avg sim closed')
+    plt.plot(freq[freq>0.], traces_to_avg.mean(axis=0)[freq>0.], label = 'avg sim open', c='r', linestyle='solid')
+    plt.plot(freq[freq>0.], traces_to_avg_c.mean(axis=0)[freq>0.], label = 'avg sim closed', c='r', linestyle='dashed')
     plt.loglog()
+    plt.grid()
     # plt.semilogy()
     plt.legend()
-    plt.xlabel('MHz')
-    plt.ylabel('power')
+    plt.xlabel('Frequency (MHz)')
+    plt.ylabel('Relative Power')
+    plt.suptitle('Comparing Real and Simulated Power Spectra')
+    plt.title(f"Counter '{p_open.parent.name}' during {p_open.name[:8]} observation")
 
     fig, axs = plt.subplots(nrows=5, sharex=True)
     for i, ax in enumerate(axs[:-1]):
