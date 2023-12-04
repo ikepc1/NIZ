@@ -68,16 +68,18 @@ def shift_phase_angles(phase_angles: np.ndarray, term: int) -> np.ndarray:
 def phase_shift(phase_angles: np.ndarray, term: int) -> np.ndarray:
     return np.arange(phase_angles.shape[1])*phase_angles[:,term][:,np.newaxis]/term
 
-def random_phases_from_ecdf(phase_angles: np.ndarray) -> np.ndarray:
+def random_phases_from_ecdf(phase_angles: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     '''This function takes relative phase angles, makes an ecdf of the dist of
     each term, and draws a corresponding random value from each.
     '''
     cdf_values = np.arange(phase_angles.shape[0])/phase_angles.shape[0]
     random_phases = np.empty(phase_angles.shape[1])
+    corresponding_shifts = np.empty_like(random_phases)
     thrown_cfd_values = np.random.rand(phase_angles.shape[1])
     for i, val in enumerate(thrown_cfd_values):
         random_phases[i] = np.interp(val, cdf_values, np.sort(phase_angles[:,i]))
-    return random_phases
+        corresponding_shifts[i] = np.interp(val, cdf_values, shifts[:,i][np.argsort(phase_angles[:,i])])
+    return random_phases, corresponding_shifts
 
 def random_values_from_ecdf(data_values: np.ndarray, N_traces: int = 1) -> np.ndarray:
     '''This function takes a 2d array of data from a noise file, where the first index
@@ -106,14 +108,15 @@ def random_noise(noisefile: Path, N_windows: int = 1) -> np.ndarray:
     noise_output =np.empty(WAVEFORM_SIZE*N_windows)
 
     #Find index of murmur mode
-    im = argrelextrema(ft.mean(axis=0), np.greater)[0][0]
+    im = argrelextrema(np.abs(ft).mean(axis=0), np.greater)[0][0]
 
     #Shift phase angles so the murmur term in ft is zero phase
-    shift = phase_shift(phase_angles,im)
-    shifted_angles = phase_angles - shift
+    shifts = phase_shift(phase_angles,im)
+    shifted_angles = phase_angles - shifts
 
     #Generate random phases from ecdfs created from shifted phases in data, unshift
-    random_phases = random_phases_from_ecdf(shifted_angles)
+    random_phases, unshifts = random_phases_from_ecdf(shifted_angles, shifts)
+    # random_phases += unshifts
 
     #Generate random power spectrum values from ecdfs created from data
     gen_ft = random_values_from_ecdf(np.abs(ft),N_windows)
@@ -183,4 +186,16 @@ if __name__ == '__main__':
     axs[-1].plot(sim_noise)
     axs[-1].set_title('simulated noise')
 
+    ft = np.fft.fft(noise_open)
+    freqs = freq_mhz()
+    phase_angles = np.angle(ft)
 
+    #Find index of murmur mode
+    im = argrelextrema(np.abs(ft).mean(axis=0), np.greater)[0][0]
+
+    #Shift phase angles so the murmur term in ft is zero phase
+    shifts = phase_shift(phase_angles,im)
+    shifted_angles = phase_angles - shifts
+
+    #Generate random phases from ecdfs created from shifted phases in data, unshift
+    random_phases, unshifts = random_phases_from_ecdf(shifted_angles, shifts)
