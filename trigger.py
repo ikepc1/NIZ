@@ -162,7 +162,7 @@ class TriggerSim:
         trigs[WAVEFORM_SIZE+TRIGGER_WIDTH:] =  (window_means - means)**2  > TRIGGER_VARIANCE * vars
         return trigs
 
-    def gen_triggers(self, fadc_counts: np.ndarray, timebins: np.ndarray) -> tuple[np.ndarray]:
+    def gen_triggers(self, fadc_counts: np.ndarray) -> tuple[np.ndarray]:
         '''This method returns an array of NICHE 1024 5ns bin snapshots for an
         event and the corresponding times shifted so 0 is the beginning of the window.
         '''
@@ -214,4 +214,4 @@ def gen_niche_trigger(ckv: CherenkovOutput) -> NicheTriggers:
     fadc_counts, NICHE_bins = ts.gen_FADC_counts(electrons, photon_times)
     fadc_counts += generate_background(ckv.cfg.noise_files)
     fadc_counts[fadc_counts>4096.] = 4096.
-    return NicheTriggers(*ts.gen_triggers(fadc_counts, NICHE_bins))
+    return NicheTriggers(*ts.gen_triggers(fadc_counts))
