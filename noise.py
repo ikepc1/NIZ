@@ -95,6 +95,8 @@ def random_values_from_ecdf(data_values: np.ndarray, N_traces: int = 1) -> np.nd
     return generated_data
 
 def calc_epdf_bins(real_fadc_array: np.ndarray, sim_fadc_array: np.ndarray) -> np.ndarray:
+    '''Calculate bins for the histogram of all real and initially simulated noise data.
+    '''
     both = np.hstack((real_fadc_array, sim_fadc_array))
     min = np.min(both)
     max = np.max(both)
@@ -103,6 +105,8 @@ def calc_epdf_bins(real_fadc_array: np.ndarray, sim_fadc_array: np.ndarray) -> n
     return midbins[1:], bins
 
 def draw_from_discrete_dist(vals: np.ndarray, probs: np.ndarray, N: int = 1) -> np.ndarray:
+    '''Draw N random values from a discretely defined pdf.
+    '''
     dcdf_values = np.cumsum(probs) / probs.sum()
     thrown_dcdf_values = np.random.rand(N)
     return np.round(np.interp(thrown_dcdf_values,dcdf_values,vals)).astype(int)
@@ -111,23 +115,29 @@ def draw_from_discrete_dist(vals: np.ndarray, probs: np.ndarray, N: int = 1) -> 
     # return thrown_values
 
 def add_glitches(real_fadc_array: np.ndarray, sim_fadc_array: np.ndarray, cut_prob: float = 0) -> np.ndarray:
+    '''This is the procedure for adding the high and low value fadc count glitches which are present in 
+    real noise traces but not reproduced by Fourier analysis.
+    '''
     sim_with_glitches = np.copy(sim_fadc_array)
     fadc_values, bins = calc_epdf_bins(real_fadc_array, sim_fadc_array)
     prob_in_real, _ = np.histogram(real_fadc_array, bins = bins, density = True)
     prob_in_sim, _ = np.histogram(sim_fadc_array, bins = bins, density = True)
     diff = prob_in_real - prob_in_sim
+    prob_different = np.abs(diff)
     up_for_change_mask = np.full(sim_fadc_array.shape, False, dtype=bool)
     for fadc in fadc_values[diff<=cut_prob]:
         up_for_change_mask += sim_fadc_array == fadc
     up_for_change = sim_fadc_array[up_for_change_mask]
-    N_to_change = int(np.round(diff[diff>0.].sum() * up_for_change.size))
+    N_to_change = int(np.round(prob_different.sum() * up_for_change.size))
+    # N_to_change = int(np.round(diff[diff>0.].sum() * up_for_change.size))
     if N_to_change == 0:
         return sim_with_glitches
-    ch_mask = np.random.randint(0,up_for_change.size,size=N_to_change)
-    diff[diff<0.] = 0.
-    up_for_change[ch_mask] = draw_from_discrete_dist(fadc_values, diff,N = N_to_change)
-    sim_with_glitches[up_for_change_mask] = up_for_change
-    return sim_with_glitches
+    else:
+        ch_mask = np.random.randint(0,up_for_change.size,size=N_to_change)
+        diff[diff<0.] = 0.
+        up_for_change[ch_mask] = draw_from_discrete_dist(fadc_values, diff, N = N_to_change)
+        sim_with_glitches[up_for_change_mask] = up_for_change
+        return sim_with_glitches
 
 
 
@@ -170,7 +180,7 @@ def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> np
     
     fadc_counts = np.round(noise_output).astype('int')
     fadc_counts_glitched = add_glitches(noise_array.flatten(),fadc_counts,cut_prob=cut_prob)
-    return fadc_counts_glitched
+    return fadc_counts_glitched, fadc_counts
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
@@ -183,8 +193,8 @@ if __name__ == '__main__':
     ft_c = noise_fft(noise_closed)
     freq = freq_mhz()
 
-    sim_noise = random_noise(p_open)
-    sim_noise_closed = random_noise(p_closed)
+    sim_noise,_ = random_noise(p_open)
+    sim_noise_closed,_ = random_noise(p_closed)
 
     
 
@@ -199,11 +209,11 @@ if __name__ == '__main__':
     # plt.plot(freq[freq>0.], ft_sc[freq>0.], label = 'noise sim closed')
     
     n_to_avg = 4096
-    prob=.01
+    prob= 0.
     traces_to_avg = np.empty((n_to_avg,WAVEFORM_SIZE))
-    long_trace = random_noise(p_open, N_windows=n_to_avg,cut_prob=prob)
+    long_trace,_ = random_noise(p_open, N_windows=n_to_avg,cut_prob=prob)
     traces_to_avg_c = np.empty((n_to_avg,WAVEFORM_SIZE))
-    long_trace_c = random_noise(p_closed, N_windows=n_to_avg,cut_prob=prob)
+    long_trace_c,_ = random_noise(p_closed, N_windows=n_to_avg,cut_prob=prob)
     for i in range(traces_to_avg.shape[0]):
         starti = i*WAVEFORM_SIZE
         # starti = np.random.randint(0,long_trace_c.size-WAVEFORM_SIZE)
@@ -242,13 +252,18 @@ if __name__ == '__main__':
     #Generate random phases from ecdfs created from shifted phases in data, unshift
     random_phases, unshifts = random_phases_from_ecdf(shifted_angles, shifts)
 
-    nc = noise_closed.flatten()
-    ns = random_noise(p_closed,4096,prob)
+    nc = noise_open.flatten()
+    # nc = noise_closed.flatten()
+    ns,n_noglitch = random_noise(p_open,4096,prob)
     midbins, bins = calc_epdf_bins(nc,ns)
     plt.figure()
-    dist_s,_,_  =plt.hist(ns,bins=bins,histtype='step',density=True,label='sim')
-    dist_c,_,_  =plt.hist(nc,bins=bins,histtype='step',density=True,label='real')
-    g = add_glitches(nc,ns)
-
-    
+    dist_c,_,_  =plt.hist(nc,bins=bins,histtype='step',density=True,label='real',color='k')
+    dist_s,_,_  =plt.hist(ns,bins=bins,histtype='step',density=True,label='simulated',color='r')
+    dist_ng,_,_  =plt.hist(n_noglitch,bins=bins,histtype='step',density=True,label='inverse fft',color='b')
+    plt.xlabel('FADC Count Value')
+    plt.ylabel('Probability / Sample')
+    plt.legend()
+    plt.grid()
+    plt.suptitle('Comparing Real and Simulated FADC Count Distribution (4096 traces)')
+    plt.title(f"Counter '{p_open.parent.name}' during {p_open.name[:8]} observation")
     plt.semilogy()

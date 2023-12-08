@@ -76,7 +76,7 @@ def generate_background(noise_files: list[Path]) -> np.ndarray:
     '''
     noise_array = np.empty((len(noise_files), WAVEFORM_SIZE*N_SIM_TRIGGER_WINDOWS))
     for i, file in enumerate(noise_files):
-        noise_array[i] = random_noise(file, N_SIM_TRIGGER_WINDOWS)
+        noise_array[i] = random_noise(file, N_SIM_TRIGGER_WINDOWS)[0]
     return noise_array
 
 class TriggerSim:
