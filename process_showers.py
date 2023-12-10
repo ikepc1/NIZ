@@ -24,7 +24,7 @@ def add_nfits_to_df(trig: NicheTriggers, df: pd.DataFrame, ev_index: int) -> Non
         df.loc[ev_index, name] = trig.cts[name].to_nfit()
 
 def add_triggers_to_dataframe(shower_df: pd.DataFrame, cfg: CounterConfig) -> pd.DataFrame:
-    '''This function creates a generator of CHASM signals from a dataframe of 
+    '''This function adds to a dataframe: niche fitted CHASM signals from a dataframe of 
     shower parameters.
     '''
     evts = [Event(*row[:10]) for row in shower_df.itertuples(index=False, name=None)]
