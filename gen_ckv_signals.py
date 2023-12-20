@@ -19,6 +19,10 @@ class Event:
     Lambda: float
 
     @property
+    def variable_parameters(self) -> list:
+        return [self.Xmax, self.Nmax, self.X0]
+
+    @property
     def core_altitude(self) -> float:
         '''This is the altitude of the core.
         '''
@@ -87,7 +91,8 @@ def get_ckv(event: Event, cfg: CounterConfig) -> tuple[np.ndarray]:
                                     tel_def.radii))
     sim.add(ch.Yield(MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS))
     sig = extract_signal(sim)
-    photons = cut_photon_zeniths(sig)
+    photons = cut_photon_zeniths(sig, cfg.max_photon_zenith)
+    # photons = sig.photons
     # return photons, sig.times
     return CherenkovOutput(photons, sig.times, cfg)
     

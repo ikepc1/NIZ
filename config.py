@@ -155,20 +155,20 @@ COUNTER_PMT_DELAY = {'curie':    40., # in ns
 #                         'rossi':     1.,
 #                         'rubin':     1.}
 
-COUNTER_FADC_PER_PE =  {'curie':     10., # number of fadc counts per PE
-                        'dirac':     10.,
-                        'einstein':  10.,
-                        'feynman':   10.,
-                        'meitner':   10.,
-                        'newton':    10.,
-                        'noether':   10.,
-                        'rutherford':10.,
-                        'wu':        10.,
-                        'yukawa':    10.,
-                        'bardeen':   10.,
-                        'bell':      10.,
-                        'rossi':     10.,
-                        'rubin':     10.}
+COUNTER_FADC_PER_PE =  {'curie':     5., # number of fadc counts per PE
+                        'dirac':     5.,
+                        'einstein':  5.,
+                        'feynman':   5.,
+                        'meitner':   5.,
+                        'newton':    5.,
+                        'noether':   5.,
+                        'rutherford':5.,
+                        'wu':        5.,
+                        'yukawa':    5.,
+                        'bardeen':   5.,
+                        'bell':      5.,
+                        'rossi':     5.,
+                        'rubin':     5.}
 @dataclass
 class CounterConfig:
     '''This is the container for all the constants related to particular counters for
@@ -176,6 +176,7 @@ class CounterConfig:
     '''
     data_files: list[Path]
     noise_files: list[Path]
+    max_photon_zenith: float = np.deg2rad(60)
 
     def __post_init__(self) -> None:
         self.active_counters = [f.parent.name for f in self.data_files]

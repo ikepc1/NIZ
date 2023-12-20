@@ -2,4 +2,7 @@
 *.mp4
 *.gif
 *.pyc
+*.pkl
+*.log
+*.bin
 __pycache__

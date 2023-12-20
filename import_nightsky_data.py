@@ -1,13 +1,10 @@
 import pandas as pd
 from pathlib import Path
 import numpy as np
-from multiprocessing import Pool, cpu_count
-from alive_progress import alive_bar
 
 from niche_raw import NicheRaw
 from niche_fit import NicheFit
-from niche_bin import bin_to_raw
-from recon import run_multiprocessing
+from utils import run_multiprocessing, read_niche_file
 from config import CounterConfig
 
 def make_nfit(nraw: NicheRaw) -> NicheFit:
@@ -16,8 +13,7 @@ def make_nfit(nraw: NicheRaw) -> NicheFit:
 def get_events_from_datafile(file: Path) -> list[NicheFit]:
     '''This function grabs the events in a niche nightsky datafile.
     '''
-    with file.open('rb') as open_file:
-        nraws = list(set(bin_to_raw(open_file.read(), file.parent.name, retfit=False)))
+    nraws = read_niche_file(file)
     nfits = run_multiprocessing(NicheFit, nraws)
     return nfits
 

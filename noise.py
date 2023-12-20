@@ -4,20 +4,12 @@ from pathlib import Path
 from scipy.signal import argrelextrema
 
 from config import NICHE_TIMEBIN_SIZE, WAVEFORM_SIZE
+from utils import read_niche_file
 
-def read_niche_file(filepath: Path) -> np.ndarray:
+def read_noise_file(filepath: Path) -> np.ndarray:
     '''This function reads a noise file and returns a numoy array of the traces.
     '''
-    with filepath.open('rb') as open_file:
-        nraw_list = list(set(bin_to_raw(open_file.read(), filepath.parent.name, retfit=False)))
-    return np.vstack([nraw.waveform for nraw in nraw_list])
-
-def trigger_times(filepath: Path) -> np.ndarray:
-    '''This function reads a niche file and returns a numoy array of the trigger times.
-    '''
-    with filepath.open('rb') as open_file:
-        nraw_list = list(set(bin_to_raw(open_file.read(), filepath.parent.name, retfit=False)))
-    return np.array([nraw.trigtime for nraw in nraw_list])
+    return np.vstack([nraw.waveform for nraw in read_niche_file(filepath)])
 
 def noise_fft(noise_array: np.ndarray) -> np.ndarray:
     '''This function returns the Fourier transform of an array of noise data
@@ -147,7 +139,7 @@ def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> np
     for a given noise file.
     '''
     #Read noise file and take its ft
-    noise_array = read_niche_file(noisefile)
+    noise_array = read_noise_file(noisefile)
     ft = np.fft.fft(noise_array)
     freqs = freq_mhz()
     phase_angles = np.angle(ft)
@@ -187,8 +179,8 @@ if __name__ == '__main__':
     plt.ion()
     p_open = Path('/home/isaac/niche_data/20190509/bell/20190509060703.bg.bin')
     p_closed = Path('/home/isaac/niche_data/20190509/bell/20190509060628.bg.bin')
-    noise_open = read_niche_file(p_open)
-    noise_closed = read_niche_file(p_closed)
+    noise_open = read_noise_file(p_open)
+    noise_closed = read_noise_file(p_closed)
     ft_o = noise_fft(noise_open)
     ft_c = noise_fft(noise_closed)
     freq = freq_mhz()

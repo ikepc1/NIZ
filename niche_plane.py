@@ -6,7 +6,7 @@ import pandas as pd
 from niche_fit import NicheFit
 from config import COUNTER_POSITIONS_DICT, NAMES
 
-def get_event_from_df(df: pd.DataFrame, event_index: int) -> list[NicheFit]:
+def get_nfits_from_df(df: pd.DataFrame, event_index: int) -> list[NicheFit]:
     '''This function returns a list of Niche events from the trigger
     dataframe.
     '''
