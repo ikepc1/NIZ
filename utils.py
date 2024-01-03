@@ -107,7 +107,8 @@ def plot_generator(event_dataframe: pd.DataFrame) -> None:
     for i, row in event_dataframe[event_dataframe['Fit'].notna()].iterrows():
         init_niche_plot()
         plot_triggers(row['Fit'])
-        plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['zenith']):.2f}")
+        plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['Plane Fit'].theta):.2f}")
+        # plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['zenith']):.2f}")
         plt.scatter(row['corex'], row['corey'], c='r', label='core')
         axis_x = -np.cos(row['zenith']) * np.cos(row['azimuth'])
         axis_y = -np.cos(row['zenith']) * np.sin(row['azimuth'])

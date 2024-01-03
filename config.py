@@ -176,7 +176,7 @@ class CounterConfig:
     '''
     data_files: list[Path]
     noise_files: list[Path]
-    max_photon_zenith: float = np.deg2rad(60)
+    max_photon_zenith: float = np.deg2rad(45)
 
     def __post_init__(self) -> None:
         self.active_counters = [f.parent.name for f in self.data_files]
