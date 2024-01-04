@@ -77,18 +77,7 @@ def get_times_array(nfits: list[NicheFit]) -> np.ndarray:
     ''''''
     trigtimes = np.array([nfit.trigtime() for nfit in nfits])
     trigtimes = np.float64(trigtimes - trigtimes.min())
-    times_array = np.empty((len(nfits), WAVEFORM_SIZE))
-    for i,time in enumerate(trigtimes):
-        times_array[i] = construct_times(time)
-    return times_array
-
-def get_long_fadc_array(nfits: list[NicheFit], cushion: int = 50) -> np.ndarray:
-    ''''''
-    fadcs = []
-    indices = []
-    for nfit in nfits:
-        fadcs.extend(nfit.waveform[TRIGGER_POSITION-cushion:TRIGGER_POSITION+cushion])
-
+    return trigtimes
 
 @dataclass
 class EventFit:
@@ -97,16 +86,32 @@ class EventFit:
     plane_fit: NichePlane
     tyro: TyroFit
     pe: ProcessEvents
+    waveform_cushion: int = 50
 
     def __post_init__(self) -> None:
         self.core = self.tyro.core_estimate
-        self.data_pa_array = np.array([f.intsignal for f in self.plane_fit.counters])
+        self.real_wf_array = np.array([f.waveform[TRIGGER_POSITION-self.waveform_cushion:TRIGGER_POSITION+self.waveform_cushion] for f in self.plane_fit.counters]).flatten()
         self.real_nfit_dict = {f.name:f for f in self.plane_fit.counters}
         self.real_trigger_ids = np.array([COUNTER_NO[f.name] for f in self.plane_fit.counters])
-        self.real_pa_error = np.sqrt(self.data_pa_array)
+        self.real_trigger_names = np.array([f.name for f in self.plane_fit.counters])
+        self.real_wf_error = np.sqrt(self.real_wf_array)
+        self.real_wf_times = self.construct_times()
         if self.plane_fit.phi < 0.:
             self.plane_fit.phi += 2*np.pi
         self.params = self.init_fit_params()
+    
+    def get_waveform_times(self, trigtime: float) -> np.ndarray:
+        ''''''
+        times_ns = np.arange(NICHE_TIMEBIN_SIZE*2*self.waveform_cushion, step = NICHE_TIMEBIN_SIZE)
+        times_ns -= times_ns[self.waveform_cushion]
+        times_ns += trigtime
+        return times_ns
+
+    def construct_times(self) -> np.ndarray:
+        ''''''
+        trigtimes = get_times_array(self.plane_fit.counters)
+        times_array = np.array([self.get_waveform_times(time) for time in trigtimes])
+        return times_array.flatten()
 
     def init_fit_params(self) -> pd.DataFrame:
         params = base_fit_params()
@@ -135,6 +140,19 @@ class EventFit:
         X0=parameters[7],
         Lambda=parameters[8]
     )
+
+    def get_trace_portion()
+
+    def model(self, times: np.ndarray, parameters: np.ndarray) -> np.ndarray:
+        ev = self.get_event(parameters)
+        sim_nfits = self.pe.gen_nfits_from_event(ev)
+        sim_nfit_dict = {f.name:f for f in sim_nfits}
+        traces_at_times = np.zeros((len(self.real_trigger_ids),2*self.waveform_cushion))
+        for i,name in enumerate(self.real_trigger_names):
+            if name in sim_nfit_dict:
+                
+                traces_at_times[i] = 
+        
 
     def model(self, det_ids: np.ndarray, parameters: np.ndarray) -> np.ndarray:
         '''This is the fit model to be passed to iminuit.
