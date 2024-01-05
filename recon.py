@@ -86,7 +86,7 @@ class EventFit:
     plane_fit: NichePlane
     tyro: TyroFit
     pe: ProcessEvents
-    waveform_cushion: int = 10
+    waveform_cushion: int = 100
 
     def __post_init__(self) -> None:
         self.core = self.tyro.core_estimate
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     g = plot_generator(ns)
 
     pe = ProcessEvents(cfg, frozen_noise=True)
-    ev = Event(0.,400,1.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70)
+    ev = Event(0.,500,1.e7,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70)
     sim_nfits = ProcessEvents(cfg, frozen_noise=True).gen_nfits_from_event(ev)
     pf = NichePlane(sim_nfits)
     ty = tyro(sim_nfits)
