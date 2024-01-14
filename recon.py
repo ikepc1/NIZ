@@ -55,9 +55,9 @@ def base_fit_params() -> pd.DataFrame:
     '''
     l = []
     l.append({'name':'logXmax', 'initial_value': 6., 'limits':(5.7,6.4), 'fixed': False})
-    l.append({'name':'logNmax', 'initial_value': np.log(1.e6), 'limits':(np.log(1.e6),np.log(1.e8)), 'fixed': False})
+    l.append({'name':'logNmax', 'initial_value': np.log(1.e5), 'limits':(np.log(1.e5),np.log(1.e7)), 'fixed': False})
     l.append({'name':'zenith', 'initial_value': np.deg2rad(40.), 'limits':(0.,np.pi/2), 'fixed': True})
-    l.append({'name':'azimuth', 'initial_value':np.deg2rad(90.), 'limits':(0.,2*np.pi), 'fixed': True})
+    l.append({'name':'azimuth', 'initial_value':np.deg2rad(315.), 'limits':(0.,2*np.pi), 'fixed': True})
     l.append({'name':'corex', 'initial_value': 450., 'limits':(COUNTER_POSITIONS[:,0].min(), COUNTER_POSITIONS[:,0].max()), 'fixed': True})
     l.append({'name':'corey', 'initial_value': -660., 'limits':(COUNTER_POSITIONS[:,1].min(), COUNTER_POSITIONS[:,1].max()), 'fixed': True})
     l.append({'name':'corez', 'initial_value': -25., 'limits':(COUNTER_POSITIONS[:,2].min(), COUNTER_POSITIONS[:,2].max()), 'fixed': True})
@@ -140,20 +140,27 @@ class EventFit:
         for nfit in nfits:
             pas[self.active_counters == nfit.name] = nfit.intsignal
             paes[self.active_counters == nfit.name] = nfit.eintsignal
-        paes[paes==0.]=1.e5
+        paes[paes==0.]=1.e-5
         return pas, paes
     
     def get_peaktimes(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
-        ts = np.full(len(self.active_counters),1.e4)
+        ts = np.full(len(self.active_counters), 1.e-4)
         tes = np.full(len(self.active_counters), 2.5)
         if self.biggest_trigger_name not in [nfit.name for nfit in nfits]:
             return ts, tes
+        dts = np.full(len(self.active_counters), nfits[0].trigtime())
         for nfit in nfits:
-            ts[self.active_counters == nfit.name] = nfit.peaktime
-            tes[self.active_counters == nfit.name] = nfit.epeaktime
-        ts -= ts[self.active_counters == self.biggest_trigger_name]
+            dts[self.active_counters == nfit.name] = nfit.trigtime()
+            # tes[self.active_counters == nfit.name] = nfit.epeaktime
+        dts = np.float64(dts-dts[self.active_counters == self.biggest_trigger_name])
+        for nfit in nfits:
+            ts[self.active_counters == nfit.name] = dts[self.active_counters == nfit.name]
         tes[tes==0.] =1.e-5
         return ts, tes
+    
+    def get_pulse_widths(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
+        '''
+        '''
     
     def get_output(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
         output = np.empty_like(self.input_indices, dtype=np.float64)
@@ -167,10 +174,10 @@ class EventFit:
         return output, output_error
 
     def cost(self, parameters: np.ndarray) -> float:
-        print(self.get_event(parameters))
         initial_parameters = self.params['initial_value'].to_numpy()
         initial_parameters[:len(parameters)] = parameters
         ev = self.get_event(initial_parameters)
+        print(ev)
         sim_nfits = self.pe.gen_nfits_from_event(ev)
         output, output_error = self.get_output(sim_nfits)
         cost = (((output - self.real_output)/self.real_output_error)**2).sum()
@@ -194,13 +201,13 @@ class EventFit:
         values = tuple(self.params['initial_value'])
         fixed = tuple(self.params['fixed'])
         limits = tuple(self.params['limits'])
-        # least_squares_np = LeastSquares(self.input_indices, 
-        #                                 self.real_output, 
-        #                                 self.real_output_error, 
-        #                                 self.model,
-        #                                 verbose=1)
-        # m = Minuit(least_squares_np, values, name=names)
-        m = Minuit(self.cost, values, name=names)
+        least_squares_np = LeastSquares(self.input_indices, 
+                                        self.real_output, 
+                                        self.real_output_error, 
+                                        self.model,
+                                        verbose=1)
+        m = Minuit(least_squares_np, values, name=names)
+        # m = Minuit(self.cost, values, name=names)
         for name, fix, lim in zip(names, fixed, limits):
             m.fixed[name] = fix
             m.limits[name] = lim
@@ -345,27 +352,27 @@ if __name__ == '__main__':
     # g = plot_generator(ns)
 
     pe = ProcessEvents(cfg, frozen_noise=True)
-    ev = Event(0.,500,1.e7,np.deg2rad(40.),np.deg2rad(90.), 450., -660.,-25.,0,70)
+    ev = Event(0.,500,1.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70)
     sim_nfits = ProcessEvents(cfg, frozen_noise=True).gen_nfits_from_event(ev)
     pf = NichePlane(sim_nfits)
     ty = tyro(sim_nfits)
     ef = EventFit(pf,ty,pe)
 
-    # lxmaxs = np.linspace(2.6,2.75,10)
-    # lnmaxs = np.linspace(6,8,10)
+    # lxmaxs = np.linspace(np.log(450),np.log(550),10)
+    # lnmaxs = np.linspace(np.log(1.e5),np.log(1.e7),10)
     # x,n = np.meshgrid(lxmaxs,lnmaxs)
     # xn = list(zip(x.flatten(),n.flatten()))
     # costs = np.array(run_multiprocessing(ef.cost,xn,1))
 
     # plt.figure()
-    # plt.contourf(10**lxmaxs,10**lnmaxs,costs.reshape(10,10),100)
+    # plt.contourf(lxmaxs,lnmaxs,np.log(costs).reshape(10,10),100)
     # plt.colorbar()
 
     # res = minimize(ef.cost, (400., 1.e6))
 
     print('starting param scan...')
     migrad=ef.fit()
-    migrad.scan(ncall=100)
+    migrad.scan(ncall=1000)
     # print('starting gradient descent...')
     # migrad.migrad()
     pars = np.array([par.value for par in migrad.params])
