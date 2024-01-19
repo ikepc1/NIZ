@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 from scipy.integrate import quad
 from scipy.special import seterr
 seterr(all="ignore")
-from config import COUNTER_POSITIONS_DICT
+from config import COUNTER_POSITIONS_DICT, TRIGGER_POSITION
 
 class NicheFit(NicheRaw):
     """

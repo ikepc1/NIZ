@@ -43,6 +43,12 @@ def get_file_ts(file: Path) -> np.datetime64:
     S = file.name[12:14]
     return np.datetime64(y+'-'+m+'-'+d+' '+H+':'+M+':'+S)
 
+def date2bytes() -> bytearray:
+    '''This function returns a bytestring of the current date.
+    '''
+    now = datetime.now()
+    return bytearray(now.strftime("%Y%m%d%H%M%S"), 'utf-8')
+
 def get_data_files(timestr: str) -> list[str]:
     '''This function finds the corresponding data parts for each
     counter at a given time. The second wildcard in the glob makes
