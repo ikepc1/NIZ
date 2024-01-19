@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 from scipy.integrate import quad
 from scipy.special import seterr
 seterr(all="ignore")
-from config import COUNTER_POSITIONS_DICT
+from config import COUNTER_POSITIONS_DICT, TRIGGER_POSITION
 
 class NicheFit(NicheRaw):
     """
@@ -47,9 +47,10 @@ class NicheFit(NicheRaw):
         s.intstart = int(np.floor(s.peaktime - 5.*s.risetime))
         s.intend   = int(np.ceil(s.peaktime + 5.*s.falltime))
         s.intsignal = s.waveform[s.intstart:s.intend+1].sum() - (s.intend+1-s.intstart)*s.baseline
+        s.eintsignal = np.sqrt(s.intsignal)
         pb[4] = 0 # set baseline to 0 for integrating
         pf = tuple(pb)
-        s.intfit = quad(s.tunka_fit,0,len(s.waveform),pf)[0]
+        # s.intfit = quad(s.tunka_fit,0,len(s.waveform),pf)[0]
 
     @staticmethod
     def tunka_fit(t,t0,pk,rt,ft,bl):

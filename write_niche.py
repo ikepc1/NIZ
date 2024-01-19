@@ -1,18 +1,11 @@
 import numpy as np
 from dataclasses import dataclass, field
-from datetime import datetime
 import struct as st
+from datetime import datetime
 
 from niche_raw import NicheRaw
 from niche_fit import NicheFit
 from config import TRIGGER_VARIANCE, TRIGGER_WIDTH
-
-
-def date2bytes() -> bytearray:
-    '''This function returns a bytestring of the current date.
-    '''
-    now = datetime.now()
-    return bytearray(now.strftime("%Y%m%d%H%M%S"), 'utf-8')
 
 @dataclass
 class CounterInfo:
@@ -49,6 +42,7 @@ class CounterTrigger:
     name: str
     waveform: np.ndarray = field(repr=False)
     times: np.ndarray = field(repr=False)
+    datebytes: datetime = field(repr=False)
 
     @property
     def trigger_time_counter(self) -> float:
@@ -72,7 +66,7 @@ class CounterTrigger:
         '''This function returns the byte buffer for a trigger.
         '''
         bb = bytearray()
-        bb.extend(date2bytes())
+        bb.extend(self.datebytes)
         bb.extend(self.counter_bytes())
         bb.extend(self.waveform_bytes())
         return bb

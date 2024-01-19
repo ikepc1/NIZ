@@ -6,8 +6,9 @@ from pathlib import Path
 from tunka_fit import TunkaPMTPulse
 from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
-from noise import random_noise
+from noise import random_noise, read_noise_file
 from config import CounterConfig, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
+from utils import date2bytes
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:
     '''This method calculates the time bins needed to fit photon temporal
@@ -78,6 +79,21 @@ def generate_background(noise_files: list[Path]) -> np.ndarray:
     for i, file in enumerate(noise_files):
         noise_array[i] = random_noise(file, N_SIM_TRIGGER_WINDOWS)[0]
     return noise_array
+
+def generate_zeros(noise_files: list[Path]) -> np.ndarray:
+    '''This function generates an array of zeros in the same shape as the background array.
+    '''
+    return np.zeros((len(noise_files), WAVEFORM_SIZE*N_SIM_TRIGGER_WINDOWS))
+
+def get_baselines(noise_files: list[Path]) -> np.ndarray:
+    '''This function gets the trigger threshold for each counter.
+    '''
+    return np.array([read_noise_file(file).mean() for file in noise_files])
+
+def get_thresholds(noise_files: list[Path]) -> dict[str,float]:
+    '''This function gets the trigger threshold for each counter.
+    '''
+    return {file.parent.name:TriggerSim.threshold(read_noise_file(file)) for file in noise_files}
 
 class TriggerSim:
     '''This class is the procedure for simulating a trigger in each active niche counter.
@@ -162,6 +178,12 @@ class TriggerSim:
         trigs[WAVEFORM_SIZE+TRIGGER_WIDTH:] =  (window_means - means)**2  > TRIGGER_VARIANCE * vars
         return trigs
 
+    @staticmethod
+    def threshold(fadc_counts: np.ndarray) -> np.ndarray:
+        '''This method calulates the average trigger threshold (above baseline) of an array of background noise.
+        '''
+        return np.sqrt(np.var(fadc_counts) * TRIGGER_VARIANCE)
+
     def gen_triggers(self, fadc_counts: np.ndarray) -> tuple[np.ndarray]:
         '''This method returns an array of NICHE 1024 5ns bin snapshots for an
         event and the corresponding times shifted so 0 is the beginning of the window.
@@ -198,8 +220,9 @@ class NicheTriggers:
         self.waveforms = self.waveforms[self.trigs]
         self.times = self.times[self.trigs]
         self.cts = {}
+        self.datebytes = date2bytes()
         for name, wf, t in zip(self.names, self.waveforms, self.times):
-            self.cts[name] = CounterTrigger(name,wf,t)
+            self.cts[name] = CounterTrigger(name,wf,t,self.datebytes)
 
 def gen_niche_trigger(ckv: CherenkovOutput, noise: np.ndarray) -> NicheTriggers:
     '''This function takes the incident cherenkov light of a shower and simulates the
