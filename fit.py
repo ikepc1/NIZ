@@ -1,41 +1,59 @@
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
+from scipy.optimize import curve_fit
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pandas as pd
+from functools import cached_property
 
 from utils import run_multiprocessing
 from tyro_fit import tyro, TyroFit
 from niche_plane import NichePlane, NicheFit
-from gen_ckv_signals import Event
+from gen_ckv_signals import Event, get_ckv, CherenkovOutput
 from process_showers import ProcessEvents
-from config import CounterConfig, COUNTER_NO, NAMES, COUNTER_POSITIONS, WAVEFORM_SIZE, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE
-from trigger import TriggerSim
+from config import CounterConfig, COUNTER_NO, NAMES, COUNTER_POSITIONS, WAVEFORM_SIZE, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE, COUNTER_QE, COUNTER_FADC_PER_PE
+from trigger import TriggerSim, rawphotons2fadc
 from noise import read_noise_file
 
 def E(Nmax: float) -> float:
+    '''This function estimates the energy of an event based on Nmax.
+    '''
     return Nmax / 1.3e-9
 
-def base_fit_params() -> pd.DataFrame:
-    '''This function creates a small dataframe with the fit parameter values to be fed to
-    minuit.
+def get_event(parameters: np.ndarray) -> Event:
+    '''This function maps the list of shower parameters to the Shower
+    Event data container.
     '''
-    l = []
-    l.append({'name':'Xmax', 'initial_value': 500., 'limits':(300.,600.), 'error': 50, 'fixed': True})
-    l.append({'name':'Nmax', 'initial_value': 1.e6, 'limits':(1.e5,1.1e6), 'error': 1.e4, 'fixed': True})
-    l.append({'name':'zenith', 'initial_value': np.deg2rad(40.), 'limits':(0.,np.pi/2), 'error': np.deg2rad(1.), 'fixed': True})
-    l.append({'name':'azimuth', 'initial_value':np.deg2rad(315.), 'limits':(0.,2*np.pi), 'error': np.deg2rad(1.), 'fixed': True})
-    l.append({'name':'corex', 'initial_value': 450., 'limits':(COUNTER_POSITIONS[:,0].min(), COUNTER_POSITIONS[:,0].max()), 'error': 1., 'fixed': True})
-    l.append({'name':'corey', 'initial_value': -660., 'limits':(COUNTER_POSITIONS[:,1].min(), COUNTER_POSITIONS[:,1].max()), 'error': 1., 'fixed': True})
-    l.append({'name':'corez', 'initial_value': -25., 'limits':(COUNTER_POSITIONS[:,2].min(), COUNTER_POSITIONS[:,2].max()),  'error': 1.,'fixed': True})
-    l.append({'name':'X0', 'initial_value': 0., 'limits':(-500.,500.), 'error': 1., 'fixed': True})
-    l.append({'name':'Lambda', 'initial_value': 70., 'limits':(0.,100.), 'error': 1., 'fixed': True})
-    df = pd.DataFrame(l)
-    df = df.set_index('name')
-    return df
+    nmax = np.exp(parameters[1])
+    return Event(
+    E=E(nmax),
+    Xmax=np.exp(parameters[0]),
+    Nmax=nmax,
+    zenith= parameters[2],
+    azimuth= parameters[3],
+    corex= parameters[4],
+    corey=parameters[5],
+    corez=parameters[6],
+    X0=parameters[7],
+    Lambda=parameters[8]
+    )
+
+def remove_noise(f: NicheFit) -> np.ndarray:
+    '''This function calculates the number of incident photons from a 
+    niche fadc trace.
+    '''
+    wf = f.tunka_fit(f.t,f.peaktime,f.peak,f.risetime,f.falltime,f.baseline)
+    wf -= f.baseline
+    return wf
+
+def fadc_dict(nfits: list[NicheFit]) -> dict[str,np.ndarray]:
+    '''This function takes the niche data traces and returns a dictionary
+    mapping the counter names to arrays of incident Cherenkov photons.
+    '''
+    return {f.name:remove_noise(f) for f in nfits}
 
 def full_wf_times(trigtime: float) -> np.ndarray:
-    ''''''
+    '''This '''
     times_ns = np.arange(NICHE_TIMEBIN_SIZE*WAVEFORM_SIZE, step = NICHE_TIMEBIN_SIZE)
     times_ns -= times_ns[TRIGGER_POSITION]
     times_ns += trigtime
@@ -47,199 +65,132 @@ def get_times_array(nfits: list[NicheFit]) -> np.ndarray:
     trigtimes = np.float64(trigtimes - trigtimes.min())
     return trigtimes
 
+def ckv_signal_dict(ckv: CherenkovOutput) -> tuple[dict[str,tuple[np.ndarray]],np.ndarray]:
+    '''This function compiles the waveforms from CHASM into a dictionary where
+    the keys are the counter names.
+    '''
+    photons, times = rawphotons2fadc(ckv)
+    return {name:p for name, p in zip(ckv.cfg.active_counters, photons)}, times
+
+def do_wf_fit(wf: np.ndarray) -> np.ndarray:
+    '''This function fits a waveform to the Tunka PMT pulse function. Dont return
+    the final value which is the baseline.
+    '''
+    p0 = (np.argmax(wf),wf.max(),2.,4.,0)
+    try:
+        pb, _ = curve_fit(NicheFit.tunka_fit,np.arange(len(wf)),wf,p0,2.*np.ones_like(wf))
+    except:
+        pb = np.zeros(5,dtype=float)
+    return pb[:-1]
+
 @dataclass
 class EventFit:
-    '''This is the container for an analysis of a real Niche event.
+    '''This class is responible for compiling the features to be fit from
+    real data.
     '''
-    plane_fit: NichePlane
-    tyro: TyroFit
-    pe: ProcessEvents
+    nfits: list[NicheFit]
+    cfg: CounterConfig = field(repr=False)
+    n_features: int = 4
 
-    def __post_init__(self) -> None:
-        self.core = self.tyro.core_estimate
-        self.active_counters = np.array(self.pe.cfg.active_counters, dtype=str)
-        self.data_pa_array = np.array([f.intsignal for f in self.plane_fit.counters])
-        self.real_trigger_names = np.array([f.name for f in self.plane_fit.counters], dtype=str)
-        self.biggest_trigger_name = self.real_trigger_names[np.argmax(self.data_pa_array)]
-        self.real_output, self.real_output_error = self.get_output(self.plane_fit.counters)
-        self.params = self.init_fit_params()
+    @property
+    def pas(self) -> np.ndarray:
+        return np.array([f.intsignal for f in self.nfits])
 
-    def init_fit_params(self) -> pd.DataFrame:
-        params = base_fit_params()
-        if self.plane_fit.phi < 0.:
-            self.plane_fit.phi += 2*np.pi
-        #Set theta and limits
-        params.at['zenith','initial_value'] = self.plane_fit.theta
-        params.at['zenith','limits'] = (self.plane_fit.theta - .2, self.plane_fit.theta + .2)
-        #set phi and limits
-        params.at['azimuth','initial_value'] = self.plane_fit.phi
-        params.at['azimuth','limits'] = (self.plane_fit.phi - .2, self.plane_fit.phi + .2)
-        #set core
-        params.at['corex','initial_value'] = self.core[0]
-        params.at['corex','limits'] = (self.core[0]-20., self.core[0]+50.)
-        params.at['corey','initial_value'] = self.core[1]
-        params.at['corey','limits'] = (self.core[1]-20., self.core[1]+50.)
-        params.at['corez','initial_value'] = self.core[2]
-        return params
+    @property
+    def nfit_dict(self) -> dict[str, NicheFit]:
+        '''This is a dictionary of the Nichefit objects in the real event.
+        '''
+        return {f.name:f for f in self.nfits}
+
+    @property
+    def biggest_counter(self) -> str:
+        '''This is the name of the counter in the data with the biggest
+        pulse.
+        '''
+        return self.nfits[self.pas.argmax()].name
     
-    @staticmethod
-    def get_event(parameters: np.ndarray) -> Event:
-        nmax = parameters[1]
-        return Event(
-        E=E(nmax),
-        Xmax=parameters[0],
-        Nmax=nmax,
-        zenith= parameters[2],
-        azimuth= parameters[3],
-        corex= parameters[4],
-        corey=parameters[5],
-        corez=parameters[6],
-        X0=parameters[7],
-        Lambda=parameters[8]
-    )
+    @cached_property
+    def biggest_trigtime(self) -> np.datetime64:
+        '''This is the time when the biggest trigger happened.
+        '''
+        return self.nfit_dict[self.biggest_counter].trigtime()
+    
+    @cached_property
+    def biggest_peaktime_difference(self) -> np.datetime64:
+        '''This is the time when the biggest trigger happened.
+        '''
+        return self.nfit_dict[self.biggest_counter].ns_diff
 
+    def adjust_data_peaktime(self, nfit: NicheFit) -> float:
+        '''This method calculates the peaktime of the 'nfit' counter relative to the peaktime of 
+        the largest trigger.
+        '''
+        trigtime_delta = nfit.trigtime() - self.biggest_trigtime
+        peaktime_difference = trigtime_delta.astype('float64') + nfit.ns_diff - self.biggest_peaktime_difference
+        return peaktime_difference
+
+    @cached_property
+    def real_output(self) -> np.ndarray:
+        '''This is the fitted parameters for each counter triggered in the event. 
+        They are the output data points to be compared to the model.
+        '''
+        pars = [np.array([self.adjust_data_peaktime(f), f.peak, f.risetime, f.falltime]) for f in self.nfits]
+        return np.hstack(pars)
+    
+    @cached_property
+    def real_error(self) -> np.ndarray:
+        '''This is the fitted parameters for each counter triggered in the event. 
+        They are the output data points to be compared to the model.
+        '''
+        errs = [np.array([f.epeaktime * NICHE_TIMEBIN_SIZE, f.epeak, f.erisetime, f.efalltime]) for f in self.nfits]
+        return np.hstack(errs)
+    
     @property
     def input_indices(self) -> np.ndarray:
-        return np.arange(len(self.pe.cfg.active_counters)*4)
+        '''This is the enumeration of the terms of the chi-squared statistic.
+        '''
+        return np.arange(self.n_features * len(self.nfits))
 
-    def get_pas(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
+    def get_output(self, parameters: np.ndarray) -> np.ndarray:
+        '''This method gives the data output for a set of shower parameters.
         '''
-        '''
-        pas = np.zeros(len(self.active_counters))
-        paes = np.full(len(self.active_counters), 1.)
-        for nfit in nfits:
-            pas[self.active_counters == nfit.name] = nfit.intsignal
-            paes[self.active_counters == nfit.name] = nfit.eintsignal
-        return pas, paes
-    
-    @property
-    def real_nfit_dict(self) -> dict[str,NicheFit]:
-        return {f.name:f for f in self.plane_fit.counters}
-
-    def get_trigtimes(self, nfits: list[NicheFit]) -> np.ndarray:
-        nfit_dict = {f.name:f for f in nfits}
-        ts = np.full(len(self.active_counters), 1.e-4)
-        if self.biggest_trigger_name not in nfit_dict:
-            return ts
-        biggest_trigger_time = nfit_dict[self.biggest_trigger_name].trigtime()
-        for i, name in enumerate(self.active_counters):
-            if name in nfit_dict:
-                trigtime = nfit_dict[name].trigtime()
-                td = trigtime - biggest_trigger_time
-                ts[i] = td.astype('float64')
-        return ts
-    
-    def get_pulse_widths(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
-        '''
-        '''
-        ws = np.zeros(len(self.active_counters))
-        wes = np.full(len(self.active_counters), 2.5)
-        for nfit in nfits:
-            ws[self.active_counters == nfit.name] = nfit.risetime + nfit.falltime
-            wes[self.active_counters == nfit.name] = np.sqrt(nfit.erisetime**2 + nfit.efalltime**2)
-        return ws, wes
-    
-    def get_peaktimes(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
-        ps = np.zeros(len(self.active_counters))
-        pes = np.full(len(self.active_counters), 2.5)
-        for nfit in nfits:
-            ps[self.active_counters == nfit.name] = nfit.peaktime
-            pes[self.active_counters == nfit.name] = nfit.epeaktime
-        return ps, pes
-    
-    def get_output(self, nfits: list[NicheFit]) -> tuple[np.ndarray]:
-        # output = np.empty_like(self.input_indices, dtype=np.float64)
-        # output_error = np.empty_like(self.input_indices, dtype=np.float64)
-        pas, paes = self.get_pas(nfits)
-        ts = self.get_trigtimes(nfits)
-        tes = np.full(len(self.active_counters), 2.5)
-        ws, wes = self.get_pulse_widths(nfits)
-        pts, ptes = self.get_peaktimes(nfits)
-        output = np.hstack((pas,ts,ws,pts))
-        output_error = np.hstack((paes,tes,wes,ptes))
-        # output[:pas.size] = pas
-        # output[pas.size:pas.size+pas.size] = ts
-        # output[pas.size+pas.size:] = ws
-        # output_error[:pas.size] = paes
-        # output_error[pas.size:pas.size+pas.size] = tes
-        # output_error[pas.size+pas.size:] = wes
-        return output, output_error
-
-    def cost(self, parameters: np.ndarray) -> float:
-        initial_parameters = self.params['initial_value'].to_numpy()
-        initial_parameters[:len(parameters)] = parameters
-        ev = self.get_event(initial_parameters)
+        ev = get_event(parameters)
         print(ev)
-        sim_nfits = self.pe.gen_nfits_from_event(ev)
-        output, output_error = self.get_output(sim_nfits)
-        cost = ((self.real_output - output)**2/self.real_output_error**2).sum()
-        print(f'Chi square = {cost}')
-        return cost
-    
-    def log10cost(self, parameters: np.ndarray) -> float:
-        cost = np.log10(self.cost(parameters))
-        return cost
+        ckv = get_ckv(ev, self.cfg)
+        sigdict, times = ckv_signal_dict(ckv)
 
-    def model(self, indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
-        ev = self.get_event(parameters)
-        sim_nfits = self.pe.gen_nfits_from_event(ev)
-        output, _ = self.get_output(sim_nfits)
-        return output
+        #do tunka fits
+        pb_array = np.array([do_wf_fit(sigdict[name]) for name in self.nfit_dict])
 
-    def fit(self) -> Minuit:
-        names = tuple(self.params.index)
-        values = tuple(self.params['initial_value'])
-        fixed = tuple(self.params['fixed'])
-        limits = tuple(self.params['limits'])
-        errors = tuple(self.params['error'])
-        least_squares_np = LeastSquares(self.input_indices, 
-                                        self.real_output, 
-                                        self.real_output_error, 
-                                        self.model,
-                                        verbose=1)
-        m = Minuit(least_squares_np, values, name=names)
-        # m = Minuit(self.cost, values, name=names)
-        for name, fix, lim, err in zip(names, fixed, limits, errors):
-            m.fixed[name] = fix
-            m.limits[name] = lim
-            m.errors[name] = err
-        return m
-    
-    @staticmethod
-    def get_params(m: Minuit) -> np.ndarray:
-        return np.array([par.value for par in m.params])
+        #tunka fit returns approximate index of peak, find times those corresponds to
+        peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
+        
+        #adjust times so biggest counter peaktime is the start
+        peaktimes -= peaktimes[self.pas.argmax()]
+        pb_array[:,0] = peaktimes
+        return pb_array.flatten()
 
-def initial_scan(m: Minuit, parname: str, ncall: int = 10) -> Minuit:
-    m.fixed[parname] = False
-    m.scan(ncall=ncall)
-    m.fixed[parname] = True
-    return m
+    def chi_square(self, parameters: np.ndarray) -> float:
+        '''This is a direct calculation of the chi square statistic for a set of shower 
+        parameters.
+        '''
+        output = self.get_output(parameters)
+        return ((self.real_output - output)**2/self.real_error**2).sum()
 
-def reset_limits(m: Minuit, parname: str, delta: float) -> Minuit:
-    value = m.params[parname].value
-    m.limits[parname] = (value - delta, value + delta)
-    return m
+    def model(self, chi_square_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
+        '''This is the model to be supplied to minuit. The indices are ignored.
+        '''
+        return self.get_output(parameters)
 
-def fit_procedure(m: Minuit) -> Minuit:
-    m = initial_scan(m, 'Nmax', 20)
-    m = reset_limits(m, 'Nmax', 2.e5)
-    m = initial_scan(m,'zenith')
-    m = reset_limits(m, 'zenith', .05)
-    m = initial_scan(m,'corex')
-    m = reset_limits(m, 'corex', 5)
-    m = initial_scan(m,'corey')
-    m = reset_limits(m, 'corey', 5)
-    m = initial_scan(m, 'Xmax')
-    m = reset_limits(m, 'Xmax', 50)
-    for par in ['Xmax','Nmax','zenith']:
-        m.fixed[par] = False
-    m.scan(ncall=30)
-    return m
-
-def do_fit(real_nfits: list[NicheFit]) -> tuple[float]:
-    pf = NichePlane(sim_nfits)
-    ty = tyro(sim_nfits)
-
+@dataclass
+class FitParam:
+    '''This is a wrapper for a minuit parameter for easy management.
+    '''
+    name: str
+    value: float
+    limits: tuple[float]
+    error: float
+    fixed: bool
 
 if __name__ == '__main__':
     # from datafiles import *
@@ -250,77 +201,116 @@ if __name__ == '__main__':
     data_files = get_data_files(data_date_and_time)
     noise_files = [preceding_noise_file(f) for f in data_files]
     cfg = CounterConfig(data_files, noise_files)
-    # ns = pd.read_pickle('sample_ns_df.pkl')
-    # g = plot_generator(ns)
-
     
-    ev = Event(0.,500,1.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70)
-    sim_nfits = ProcessEvents(cfg, frozen_noise=True).gen_nfits_from_event(ev)
+    pars = [np.log(500),np.log(2.e6),np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70]
+    ev = get_event(pars)
+    pe = ProcessEvents(cfg, frozen_noise=True)
+    sim_nfits = pe.gen_nfits_from_event(ev)
+    ef = EventFit(sim_nfits, cfg)
     pf = NichePlane(sim_nfits)
     ty = tyro(sim_nfits)
 
-    xmax = []
-    nmax = []
-    zenith = []
-    corex = []
-    corey = []
 
-    for i in range(10):
-        pe = ProcessEvents(cfg, frozen_noise=True)
-        ef = EventFit(pf,ty,pe)
+    # parlist = [
+    #     FitParam('xmax', np.log(300.), (np.log(300.), np.log(600.)), np.log(50.), False),
+    #     FitParam('nmax', np.log(1.e5), (np.log(1.e5), np.log(1.e7)), np.log(1.e5), False),
+    #     FitParam('zenith', pf.theta, (pf.theta -.1, pf.theta +.1), np.deg2rad(1.), True),
+    #     FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.), True),
+    #     FitParam('corex',ty.core_estimate[0],(ty.core_estimate[0] - 20.,ty.core_estimate[0] + 20.), 5., True),
+    #     FitParam('corey',ty.core_estimate[1],(ty.core_estimate[1] - 20.,ty.core_estimate[1] + 20.), 5., True),
+    #     FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 20.,ty.core_estimate[2] + 20.), 5., True),
+    #     FitParam('x0',0.,(0,100),1,True),
+    #     FitParam('lambda',70., (0,100),1,True)
+    # ]
 
-        # print('starting param scan...')
-        m=ef.fit()
-        m = fit_procedure(m)
-        # migrad.scan(ncall=10)
-        # print('starting gradient descent...')
-        # migrad.migrad()
-        pars = np.array([par.value for par in m.params])
-        xmax.append(pars[0])
-        nmax.append(pars[1])
-        zenith.append(pars[2])
-        corex.append(pars[4])
-        corey.append(pars[5])
-        sim_ev = ef.get_event(pars)
-        plot_event(tyro(ef.pe.gen_nfits_from_event(sim_ev)), f'sim {i}')
-    plot_event(ty, f'real')
+    # ls = LeastSquares(ef.input_indices,ef.real_output,ef.real_error,ef.model,verbose=1)
+    # guess_pars = [f.value for f in parlist]
+    # names = [f.name for f in parlist]
+    # m = Minuit(ls,guess_pars,name=names)
 
-    # pe = ProcessEvents(cfg, frozen_noise=True)
-    # ef = EventFit(pf,ty,pe)
-    # init_pars = ef.params['initial_value'].tolist()
+    # for f in parlist:
+    #     m.limits[f.name] = f.limits
+    #     m.errors[f.name] = f.error
 
-    # ngrid = 11
+    # m.fixed = True
+    # m.fixed['zenith'] = False
+    # m.fixed['azimuth'] = False
+    # m.simplex()
 
-    # xmaxs = np.linspace(480,520,ngrid)
-    # nmaxs = np.linspace(.9e6,1.1e6,ngrid)
-    # x,n = np.meshgrid(xmaxs,nmaxs)
-    # xn = list(zip(x.flatten(),n.flatten()))
-    # xncosts = np.array(run_multiprocessing(ef.cost,xn,1))
-    # plt.figure()
-    # plt.contourf(xmaxs,nmaxs,xncosts.reshape(ngrid,ngrid),xncosts.min() + np.linspace(1,10,10)**2)
-    # plt.xlabel('xmax')
-    # plt.ylabel('nmax')
-    # plt.colorbar(label='chi_square')
+    # m.fixed = True
+    # m.fixed['corex'] = False
+    # m.fixed['corey'] = False
+    # m.simplex()
 
-    # theta = np.deg2rad(np.linspace(35,45,ngrid))
-    # phi = np.deg2rad(np.linspace(310,320,ngrid))
-    # t,p = np.meshgrid(theta, phi)
-    # parlist = [(init_pars[0], init_pars[1], tn, pn) for tn, pn in zip(t.flatten(),p.flatten())]
-    # tpcosts = np.array(run_multiprocessing(ef.cost,parlist,1))
-    # plt.figure()
-    # plt.contourf(theta,phi,tpcosts.reshape(ngrid,ngrid),np.linspace(1,10,10)**2)
-    # plt.xlabel('theta')
-    # plt.ylabel('phi')
-    # plt.colorbar(label='chi_square')
+    guess_pars = pars.copy()
+    # guess_pars[0] = np.log(300.)
+    # guess_pars[1] = np.log(1.e5)
+    # guess_pars[2] = pf.theta
+    # guess_pars[3] = pf.phi
+    # guess_pars[4] = ty.core_estimate[0]
+    # guess_pars[5] = ty.core_estimate[1]
 
-    # corex = np.linspace(450-50,450+50,ngrid)
-    # corey = np.linspace(-660-50,-660+50,ngrid)
-    # x,y = np.meshgrid(corex, corey)
-    # parlist = [(init_pars[0], init_pars[1], init_pars[2], init_pars[3], xc, yc) for xc, yc in zip(x.flatten(),y.flatten())]
-    # xycosts = np.array(run_multiprocessing(ef.cost,parlist,1))
-    # plt.figure()
-    # plt.contourf(corex,corey,xycosts.reshape(ngrid,ngrid),np.linspace(1,50,50)**2)
-    # plt.xlabel('corex')
-    # plt.ylabel('corey')
-    # plt.colorbar(label='chi_square')
+    # names = ('xmax','nmax','zenith','azimuth','corex','corey','corez','x0','lambda')
+    # ls = LeastSquares(ef.input_indices,ef.real_output,ef.real_error,ef.model,verbose=1)
+    # m = Minuit(ls,guess_pars,name=names)
+    # m.fixed = True
+    # m.fixed[0] = False
+    # m.fixed[1] = False
+    # # m.fixed[2] = False
+    # # m.fixed[3] = False
+    # # m.fixed[4] = False
+    # # m.fixed[5] = False
+    # m.limits[0] = (np.log(300.),np.log(600.))
+    # m.limits[1] = (np.log(1.e5),np.log(1.e7))
+    # m.limits[2] = (0, np.pi/2)
+    # m.limits[3] = (0, 2*np.pi)
+    # m.limits[4] = (COUNTER_POSITIONS[:,0].min(), COUNTER_POSITIONS[:,0].max())
+    # m.limits[5] = (COUNTER_POSITIONS[:,1].min(), COUNTER_POSITIONS[:,1].max())
+    # m.errors[0] = np.log(50.)
+    # m.errors[1] = np.log(1.e5)
+    # m.errors[2] = np.deg2rad(1.)
+    # m.errors[3] = np.deg2rad(1.)
+    # m.errors[4] = 1.
+    # m.errors[5] = 1.
+    # m.tol=.001
+    # m.simplex()
 
+    # fitpars = np.array([par.value for par in m.params])
+
+    ngrid = 51
+
+    xmaxs = np.linspace(np.log(400),np.log(600),ngrid)
+    nmaxs = np.linspace(np.log(1.e6),np.log(3.e6),ngrid)
+    x,n = np.meshgrid(xmaxs,nmaxs)
+    xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
+    xncosts = np.array(run_multiprocessing(ef.chi_square,xn,1))
+    plt.figure()
+    plt.contourf(np.exp(xmaxs),np.exp(nmaxs),xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(20)**2)
+    plt.xlabel('xmax')
+    plt.ylabel('nmax')
+    plt.semilogy()
+    plt.colorbar(label='chi_square')
+
+    dang = np.deg2rad(5.)
+    ts = np.linspace(guess_pars[2]-dang,guess_pars[2]+dang,ngrid)
+    ps = np.linspace(guess_pars[3]-dang,guess_pars[3]+dang,ngrid)
+    t,p = np.meshgrid(ts,ps)
+    tp = [[*guess_pars[:2],tm,pm,*guess_pars[4:]] for tm,pm in zip(t.flatten(),p.flatten())]
+    tpcosts = np.array(run_multiprocessing(ef.chi_square,tp,1))
+    plt.figure()
+    plt.contourf(np.rad2deg(ts),np.rad2deg(ps),tpcosts.reshape(ngrid,ngrid),tpcosts.min() + np.arange(20)**2)
+    plt.xlabel('zenith')
+    plt.ylabel('azimuth')
+    plt.colorbar(label='chi_square')
+
+    dpos = 5.
+    xs = np.linspace(guess_pars[4]-dpos,guess_pars[4]+dpos,ngrid)
+    ys = np.linspace(guess_pars[5]-dpos,guess_pars[5]+dpos,ngrid)
+    xc,yc = np.meshgrid(xs,ys)
+    xy = [[*guess_pars[:4],xm,ym,*guess_pars[-3:]] for xm,ym in zip(xc.flatten(),yc.flatten())]
+    xycosts = np.array(run_multiprocessing(ef.chi_square,xy,1))
+    plt.figure()
+    plt.contourf(xs,ys,xycosts.reshape(ngrid,ngrid),xycosts.min() + np.arange(20)**2)
+    plt.xlabel('corex')
+    plt.ylabel('corey')
+    plt.colorbar(label='chi_square')

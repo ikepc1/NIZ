@@ -41,7 +41,10 @@ class TyroFit:
     def core_estimate(self) -> np.ndarray:
         '''This property is the weighted average of the counter positions.
         '''
-        return np.average(self.counter_pos, weights = self.pa, axis = 0)
+        # return np.average(self.counter_pos, weights = self.pa, axis = 0)
+        biggest4 = self.counter_pos[self.pa.argsort()][-4:]
+        pa4 = self.pa[self.pa.argsort()][-4:]
+        return np.average(biggest4, weights = pa4, axis = 0)
     
     @property
     def has_contained_core(self) -> bool:

@@ -224,6 +224,15 @@ class NicheTriggers:
         for name, wf, t in zip(self.names, self.waveforms, self.times):
             self.cts[name] = CounterTrigger(name,wf,t,self.datebytes)
 
+def rawphotons2fadc(ckv: CherenkovOutput) -> tuple[np.ndarray]:
+    incident_ckv_summed = sum_over_wavelengths(ckv.photons)
+    incident_photons, photon_bins = gen_photon_signal(incident_ckv_summed,ckv.times)
+    photon_times = bin_medians(photon_bins)
+    ts = TriggerSim(ckv.cfg)
+    electrons = ts.gen_electron_signal(incident_photons, photon_times)
+    fadc_counts, NICHE_bins = ts.gen_FADC_counts(electrons, photon_times)
+    return fadc_counts, NICHE_bins
+
 def gen_niche_trigger(ckv: CherenkovOutput, noise: np.ndarray) -> NicheTriggers:
     '''This function takes the incident cherenkov light of a shower and simulates the
     niche trigger.
