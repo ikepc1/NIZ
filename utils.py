@@ -99,7 +99,7 @@ def plot_triggers(fit: TyroFit) -> None:
     plt.scatter(fit.counter_pos[:,0], fit.counter_pos[:,1], s = fit.pa, c=fit.t)#, cmap = 'inferno')
     plt.colorbar(label='nanoseconds')
 
-def plot_event(fit: TyroFit, title: str) -> None:
+def plot_event(fit: TyroFit, title: str='') -> None:
     '''This function plots an individual Niche event.
     '''
     init_niche_plot()

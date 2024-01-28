@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 from scipy.integrate import quad
 from scipy.special import seterr
 seterr(all="ignore")
-from config import COUNTER_POSITIONS_DICT, TRIGGER_POSITION
+from config import COUNTER_POSITIONS_DICT, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE
 
 class NicheFit(NicheRaw):
     """
@@ -28,7 +28,10 @@ class NicheFit(NicheRaw):
         ft0 = 4.
         p0 = (t00,pk0,rt0,ft0,bl0)
         t = np.arange(len(s.waveform))
-        ev = 2.*np.ones_like(s.waveform)
+        s.t = t
+        # ev = 2.*np.ones_like(s.waveform)
+        s.baseline_error = np.sqrt(np.mean([np.var(s.waveform[:t00-50]),np.var(s.waveform[t00+50:])]))
+        ev = np.full_like(s.waveform,s.baseline_error)
         try:
             pb,pcov = curve_fit(s.tunka_fit,t,s.waveform,p0,ev)
         except RuntimeError:
@@ -51,6 +54,17 @@ class NicheFit(NicheRaw):
         pb[4] = 0 # set baseline to 0 for integrating
         pf = tuple(pb)
         # s.intfit = quad(s.tunka_fit,0,len(s.waveform),pf)[0]
+
+    @property
+    def peak_datetime(self) -> np.timedelta64:
+        '''This method returns the datetime object for the actual time the peak occurred.
+        '''
+        ns_diff = int(np.round((self.peaktime - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE))
+        return self.trigtime() + np.timedelta64(ns_diff, 'ns')
+
+    @property
+    def ns_diff(self) -> float:
+        return (self.peaktime - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
 
     @staticmethod
     def tunka_fit(t,t0,pk,rt,ft,bl):

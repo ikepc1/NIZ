@@ -47,6 +47,8 @@ class NichePlane:
         s.enx,s.eny,s.ez0 = np.sqrt(np.diag(s.covar))
         s.theta = np.arcsin(np.sqrt(s.nx**2+s.ny**2))
         s.phi   = np.arctan2(s.ny,s.nx)
+        if s.phi < 0.:
+            s.phi += 2*np.pi
 
     def __str__(s):
         output = "%d.%09d\n"%(int(s.date),int(s.meantrigtime))
