@@ -31,8 +31,8 @@ def get_event(parameters: np.ndarray) -> Event:
     Nmax=nmax,
     zenith= parameters[2],
     azimuth= parameters[3],
-    corex= parameters[4],
-    corey=parameters[5],
+    corex=np.exp(parameters[4]),
+    corey=-np.exp(parameters[5]),
     corez=parameters[6],
     X0=parameters[7],
     Lambda=parameters[8]
@@ -81,7 +81,16 @@ def do_wf_fit(wf: np.ndarray) -> np.ndarray:
         pb, _ = curve_fit(NicheFit.tunka_fit,np.arange(len(wf)),wf,p0,2.*np.ones_like(wf))
     except:
         pb = np.zeros(5,dtype=float)
-    return pb[:-1]
+    return pb
+
+def do_pulse_integration(wf: np.ndarray) -> float:
+    '''This function finds the pulse area of a waveform.
+    '''
+    pbs = do_wf_fit(wf)
+    intstart = int(np.floor(pbs[0] - 5.*pbs[2]))
+    intend   = int(np.ceil(pbs[0] + 5.*pbs[3]))
+    intsignal = wf[intstart:intend+1].sum()
+    return intsignal
 
 @dataclass
 class EventFit:
@@ -129,6 +138,30 @@ class EventFit:
         peaktime_difference = trigtime_delta.astype('float64') + nfit.ns_diff - self.biggest_peaktime_difference
         return peaktime_difference
 
+    @property
+    def pa_output(self) -> np.ndarray:
+        '''This property is the pulse area seen in each real counter.
+        '''
+        return np.array([f.intsignal for f in self.nfits])
+    
+    @property
+    def pa_error(self) -> np.ndarray:
+        return np.array([f.eintsignal for f in self.nfits])
+    
+    def ckv_from_params(self, parameters: np.ndarray) -> np.ndarray:
+        ev = get_event(parameters)
+        print(ev)
+        ckv = get_ckv(ev, self.cfg)
+        return ckv
+
+    def get_pa_output(self, parameters: np.ndarray) -> np.ndarray:
+        '''This method gets the pulse area from a sim.
+        '''
+        ckv = self.ckv_from_params(parameters)
+        sigdict, _ = ckv_signal_dict(ckv)
+        pb_array = np.array([do_pulse_integration(sigdict[name]) for name in self.nfit_dict])
+        return pb_array
+
     @cached_property
     def real_output(self) -> np.ndarray:
         '''This is the fitted parameters for each counter triggered in the event. 
@@ -160,7 +193,7 @@ class EventFit:
         sigdict, times = ckv_signal_dict(ckv)
 
         #do tunka fits
-        pb_array = np.array([do_wf_fit(sigdict[name]) for name in self.nfit_dict])
+        pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
 
         #tunka fit returns approximate index of peak, find times those corresponds to
         peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
@@ -202,47 +235,90 @@ if __name__ == '__main__':
     noise_files = [preceding_noise_file(f) for f in data_files]
     cfg = CounterConfig(data_files, noise_files)
     
-    pars = [np.log(500),np.log(2.e6),np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70]
+    pars = [np.log(500),np.log(2.e6),np.deg2rad(40.),np.deg2rad(315.), np.log(450.), np.log(660.),-25.,0,70]
     ev = get_event(pars)
-    pe = ProcessEvents(cfg, frozen_noise=True)
-    sim_nfits = pe.gen_nfits_from_event(ev)
-    ef = EventFit(sim_nfits, cfg)
-    pf = NichePlane(sim_nfits)
-    ty = tyro(sim_nfits)
+    pe = ProcessEvents(cfg, frozen_noise=False)
+
+    real_nfits = pe.gen_nfits_from_event(ev)
+    
+
+    xmax = []
+    nmax = []
+    zenith = []
+    azimuth = []
+    corex = []
+    corey = []
+    chi2=[]
+
+    for i in range(1):
+        real_nfits = pe.gen_nfits_from_event(ev)
+        ef = EventFit(real_nfits, cfg)
+        pf = NichePlane(real_nfits)
+        ty = tyro(real_nfits)
 
 
-    # parlist = [
-    #     FitParam('xmax', np.log(300.), (np.log(300.), np.log(600.)), np.log(50.), False),
-    #     FitParam('nmax', np.log(1.e5), (np.log(1.e5), np.log(1.e7)), np.log(1.e5), False),
-    #     FitParam('zenith', pf.theta, (pf.theta -.1, pf.theta +.1), np.deg2rad(1.), True),
-    #     FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.), True),
-    #     FitParam('corex',ty.core_estimate[0],(ty.core_estimate[0] - 20.,ty.core_estimate[0] + 20.), 5., True),
-    #     FitParam('corey',ty.core_estimate[1],(ty.core_estimate[1] - 20.,ty.core_estimate[1] + 20.), 5., True),
-    #     FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 20.,ty.core_estimate[2] + 20.), 5., True),
-    #     FitParam('x0',0.,(0,100),1,True),
-    #     FitParam('lambda',70., (0,100),1,True)
-    # ]
+        parlist = [
+            FitParam('xmax', np.log(300.), (np.log(300.), np.log(600.)), np.log(50.), False),
+            FitParam('nmax', np.log(1.e5), (np.log(1.e5), np.log(1.e7)), np.log(1.e5), False),
+            FitParam('zenith', pf.theta, (pf.theta -.1, pf.theta +.1), np.deg2rad(1.), True),
+            FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.), True),
+            FitParam('corex',np.log(ty.core_estimate[0]),(np.log(ty.core_estimate[0] - 50.),np.log(ty.core_estimate[0] + 50.)), 5., True),
+            FitParam('corey',np.log(-ty.core_estimate[1]),(np.log(-ty.core_estimate[1] - 50.),np.log(-ty.core_estimate[1] + 50.)), 5., True),
+            FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1., True),
+            FitParam('x0',0.,(0,100),1,True),
+            FitParam('lambda',70., (0,100),1,True)
+        ]
 
-    # ls = LeastSquares(ef.input_indices,ef.real_output,ef.real_error,ef.model,verbose=1)
-    # guess_pars = [f.value for f in parlist]
-    # names = [f.name for f in parlist]
-    # m = Minuit(ls,guess_pars,name=names)
+        ls = LeastSquares(ef.input_indices,ef.real_output,ef.real_error,ef.model,verbose=1)
+        guess_pars = [f.value for f in parlist]
+        names = [f.name for f in parlist]
+        m = Minuit(ls,guess_pars,name=names)
 
-    # for f in parlist:
-    #     m.limits[f.name] = f.limits
-    #     m.errors[f.name] = f.error
+        for f in parlist:
+            m.limits[f.name] = f.limits
+            m.errors[f.name] = f.error
 
-    # m.fixed = True
-    # m.fixed['zenith'] = False
-    # m.fixed['azimuth'] = False
-    # m.simplex()
+        m.fixed = True
+        m.fixed['zenith'] = False
+        m.fixed['azimuth'] = False
+        m = m.simplex()
 
-    # m.fixed = True
-    # m.fixed['corex'] = False
-    # m.fixed['corey'] = False
-    # m.simplex()
+        m.fixed = True
+        m.fixed['xmax'] = False
+        m.fixed['nmax'] = False
+        m.fixed['corex'] = False
+        m.fixed['corey'] = False
+        # m.fixed['corez'] = False
+        m.tol=(.001)
+        m = m.simplex()
 
-    guess_pars = pars.copy()
+        m.fixed = True
+        m.fixed['xmax'] = False
+        m.fixed['nmax'] = False
+
+        m.values['xmax'] = np.log(600)
+        m.values['nmax'] = np.log(1.e7)
+        m = m.simplex()
+
+        m.fixed = True
+        m.fixed['xmax'] = False
+        m.fixed['nmax'] = False
+        m.fixed['corex'] = False
+        m.fixed['corey'] = False
+        # m.fixed['corez'] = False
+        m.tol=(.001)
+        m = m.simplex()
+
+        pars = np.array([par.value for par in m.params])
+        xmax.append(np.exp(pars[0]))
+        nmax.append(np.exp(pars[1]))
+        zenith.append(pars[2])
+        azimuth.append(pars[3])
+        corex.append(np.exp(pars[4]))
+        corey.append(-np.exp(pars[5]))
+        chi2.append(ef.chi_square(pars))
+
+    # guess_pars = pars.copy()
     # guess_pars[0] = np.log(300.)
     # guess_pars[1] = np.log(1.e5)
     # guess_pars[2] = pf.theta
@@ -277,40 +353,40 @@ if __name__ == '__main__':
 
     # fitpars = np.array([par.value for par in m.params])
 
-    ngrid = 51
+    # ngrid = 51
 
-    xmaxs = np.linspace(np.log(400),np.log(600),ngrid)
-    nmaxs = np.linspace(np.log(1.e6),np.log(3.e6),ngrid)
-    x,n = np.meshgrid(xmaxs,nmaxs)
-    xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
-    xncosts = np.array(run_multiprocessing(ef.chi_square,xn,1))
-    plt.figure()
-    plt.contourf(np.exp(xmaxs),np.exp(nmaxs),xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(20)**2)
-    plt.xlabel('xmax')
-    plt.ylabel('nmax')
-    plt.semilogy()
-    plt.colorbar(label='chi_square')
+    # xmaxs = np.linspace(np.log(400),np.log(600),ngrid)
+    # nmaxs = np.linspace(np.log(1.e6),np.log(3.e6),ngrid)
+    # x,n = np.meshgrid(xmaxs,nmaxs)
+    # xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
+    # xncosts = np.array(run_multiprocessing(ef.chi_square,xn,1))
+    # plt.figure()
+    # plt.contourf(np.exp(xmaxs),np.exp(nmaxs),xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(20)**2)
+    # plt.xlabel('xmax')
+    # plt.ylabel('nmax')
+    # plt.semilogy()
+    # plt.colorbar(label='chi_square')
 
-    dang = np.deg2rad(5.)
-    ts = np.linspace(guess_pars[2]-dang,guess_pars[2]+dang,ngrid)
-    ps = np.linspace(guess_pars[3]-dang,guess_pars[3]+dang,ngrid)
-    t,p = np.meshgrid(ts,ps)
-    tp = [[*guess_pars[:2],tm,pm,*guess_pars[4:]] for tm,pm in zip(t.flatten(),p.flatten())]
-    tpcosts = np.array(run_multiprocessing(ef.chi_square,tp,1))
-    plt.figure()
-    plt.contourf(np.rad2deg(ts),np.rad2deg(ps),tpcosts.reshape(ngrid,ngrid),tpcosts.min() + np.arange(20)**2)
-    plt.xlabel('zenith')
-    plt.ylabel('azimuth')
-    plt.colorbar(label='chi_square')
+    # dang = np.deg2rad(5.)
+    # ts = np.linspace(guess_pars[2]-dang,guess_pars[2]+dang,ngrid)
+    # ps = np.linspace(guess_pars[3]-dang,guess_pars[3]+dang,ngrid)
+    # t,p = np.meshgrid(ts,ps)
+    # tp = [[*guess_pars[:2],tm,pm,*guess_pars[4:]] for tm,pm in zip(t.flatten(),p.flatten())]
+    # tpcosts = np.array(run_multiprocessing(ef.chi_square,tp,1))
+    # plt.figure()
+    # plt.contourf(np.rad2deg(ts),np.rad2deg(ps),tpcosts.reshape(ngrid,ngrid),tpcosts.min() + np.arange(20)**2)
+    # plt.xlabel('zenith')
+    # plt.ylabel('azimuth')
+    # plt.colorbar(label='chi_square')
 
-    dpos = 5.
-    xs = np.linspace(guess_pars[4]-dpos,guess_pars[4]+dpos,ngrid)
-    ys = np.linspace(guess_pars[5]-dpos,guess_pars[5]+dpos,ngrid)
-    xc,yc = np.meshgrid(xs,ys)
-    xy = [[*guess_pars[:4],xm,ym,*guess_pars[-3:]] for xm,ym in zip(xc.flatten(),yc.flatten())]
-    xycosts = np.array(run_multiprocessing(ef.chi_square,xy,1))
-    plt.figure()
-    plt.contourf(xs,ys,xycosts.reshape(ngrid,ngrid),xycosts.min() + np.arange(20)**2)
-    plt.xlabel('corex')
-    plt.ylabel('corey')
-    plt.colorbar(label='chi_square')
+    # dpos = 5.
+    # xs = np.linspace(guess_pars[4]-dpos,guess_pars[4]+dpos,ngrid)
+    # ys = np.linspace(guess_pars[5]-dpos,guess_pars[5]+dpos,ngrid)
+    # xc,yc = np.meshgrid(xs,ys)
+    # xy = [[*guess_pars[:4],xm,ym,*guess_pars[-3:]] for xm,ym in zip(xc.flatten(),yc.flatten())]
+    # xycosts = np.array(run_multiprocessing(ef.chi_square,xy,1))
+    # plt.figure()
+    # plt.contourf(xs,ys,xycosts.reshape(ngrid,ngrid),xycosts.min() + np.arange(20)**2)
+    # plt.xlabel('corex')
+    # plt.ylabel('corey')
+    # plt.colorbar(label='chi_square')

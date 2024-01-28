@@ -132,6 +132,17 @@ class TriggerSim:
         for i, (pes, d) in enumerate(zip(pes, self.cfg.pmt_delay.values())):
             anode_electrons[i] = self.tunka_convolve(pes, times, d)
         return anode_electrons
+    
+    # def gen_electron_signal(self, incident_photons: np.ndarray, times: np.ndarray) -> np.ndarray:
+    #     '''This method converts the incident photons to each counter to
+    #     electrons at each anode.
+    #     '''
+    #     pes = self.quantum_efficiency(incident_photons)
+    #     tunkas = [TunkaPMTPulse(t0=delay) for delay in self.cfg.pmt_delay.values()]
+    #     pdfs = np.array([t.tunka_pdf(times) for t in tunkas])
+    #     anode_electrons = fftconvolve(pes, pdfs, mode = 'same', axes=1)
+    #     return anode_electrons
+
 
     def gen_FADC_counts(self, pmt_electrons: np.ndarray, g_time_bins: np.ndarray) -> tuple:
         '''This method samples the pmt electrons into NICHE timebins and converts
