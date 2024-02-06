@@ -152,8 +152,8 @@ class TriggerSim:
         FADC_count_array = np.empty((len(self.cfg.active_counters), bins.size))
         for i, (pes ,fp) in enumerate(zip(pmt_electrons, self.cfg.fadc_per_pe.values())):
             FADC_count_array[i] = fp * pes[::int(NICHE_TIMEBIN_SIZE)]
-        fadc_counts = np.round(FADC_count_array)
-        return fadc_counts , bins
+        # fadc_counts = np.round(FADC_count_array)
+        return FADC_count_array , bins
     
     @staticmethod
     def rolling_mean_and_var(fadc_counts: np.ndarray) -> np.ndarray:
@@ -183,6 +183,7 @@ class TriggerSim:
         '''This method calculates the trigger condition for each bin after the 
         first 1024.
         '''
+        fadc_counts = np.round(fadc_counts)
         trigs = np.full_like(fadc_counts, False, dtype=bool)
         window_means, means, vars = TriggerSim.rolling_mean_and_var(fadc_counts)
         # window_means =Trigger.window_means(fadc_counts)

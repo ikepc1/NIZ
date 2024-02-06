@@ -47,6 +47,24 @@ class TyroFit:
         return np.average(biggest4, weights = pa4, axis = 0)
     
     @property
+    def xlimits(self) -> tuple[float]:
+        '''This property is the limits on corex and corey.
+        '''
+        biggest4 = self.counter_pos[self.pa.argsort()][-4:]
+        x_max = biggest4[:,0].max()
+        x_min = biggest4[:,0].min()
+        return (x_min, x_max)
+    
+    @property
+    def ylimits(self) -> tuple[float]:
+        '''This property is the limits on corex and corey.
+        '''
+        biggest4 = self.counter_pos[self.pa.argsort()][-4:]
+        y_max = biggest4[:,1].max()
+        y_min = biggest4[:,1].min()
+        return (y_min, y_max)
+
+    @property
     def has_contained_core(self) -> bool:
         '''This property is whether the core is completely contained by the 
         active counters.
