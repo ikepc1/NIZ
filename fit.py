@@ -88,12 +88,12 @@ def get_times_array(nfits: list[NicheFit]) -> np.ndarray:
     trigtimes = np.float64(trigtimes - trigtimes.min())
     return trigtimes
 
-def ckv_signal_dict(ckv: CherenkovOutput) -> tuple[dict[str,tuple[np.ndarray]],np.ndarray]:
+def ckv_signal_dict(ckv: CherenkovOutput) -> tuple[dict[str,np.ndarray],np.ndarray]:
     '''This function compiles the waveforms from CHASM into a dictionary where
     the keys are the counter names.
     '''
-    photons, times = rawphotons2fadc(ckv)
-    return {name:p for name, p in zip(ckv.cfg.active_counters, photons)}, times
+    fadc, times = rawphotons2fadc(ckv)
+    return {name:f for name, f in zip(ckv.cfg.active_counters, fadc)}, times
 
 def do_wf_fit(wf: np.ndarray) -> np.ndarray:
     '''This function fits a waveform to the Tunka PMT pulse function. Dont return
@@ -115,190 +115,11 @@ def do_pulse_integration(wf: np.ndarray) -> float:
     intsignal = wf[intstart:intend+1].sum()
     return intsignal
 
-# @dataclass
-# class EventFit:
-#     '''This class is responible for compiling the features to be fit from
-#     real data.
-#     '''
-#     nfits: list[NicheFit]
-#     param_mapper: ParamMapper
-#     cfg: CounterConfig = field(repr=False)
-#     n_features: int = 4
-
-#     @property
-#     def pas(self) -> np.ndarray:
-#         return np.array([f.intsignal for f in self.nfits])
-    
-#     @cached_property
-#     def normalized_pas(self) -> np.ndarray:
-#         return self.pas / self.pas.sum()
-    
-#     @property
-#     def pa_error(self) -> np.ndarray:
-#         return np.array([f.eintsignal for f in self.nfits])
-    
-#     @cached_property
-#     def normalized_pa_error(self) -> np.ndarray:
-#         return self.pa_error / self.pas.sum()
-
-#     @property
-#     def nfit_dict(self) -> dict[str, NicheFit]:
-#         '''This is a dictionary of the Nichefit objects in the real event.
-#         '''
-#         return {f.name:f for f in self.nfits}
-
-#     @cached_property
-#     def biggest_counter(self) -> str:
-#         '''This is the name of the counter in the data with the biggest
-#         pulse.
-#         '''
-#         return self.nfits[self.pas.argmax()].name
-    
-#     @cached_property
-#     def biggest_trigtime(self) -> np.datetime64:
-#         '''This is the time when the biggest trigger happened.
-#         '''
-#         return self.nfit_dict[self.biggest_counter].trigtime()
-    
-#     @cached_property
-#     def biggest_peaktime_difference(self) -> np.datetime64:
-#         '''This is the time when the biggest trigger happened.
-#         '''
-#         return self.nfit_dict[self.biggest_counter].ns_diff
-
-#     def adjust_data_peaktime(self, nfit: NicheFit) -> float:
-#         '''This method calculates the peaktime of the 'nfit' counter relative to the peaktime of 
-#         the largest trigger.
-#         '''
-#         trigtime_delta = nfit.trigtime() - self.biggest_trigtime
-#         peaktime_difference = trigtime_delta.astype('float64') + nfit.ns_diff - self.biggest_peaktime_difference
-#         return peaktime_difference
-    
-#     @cached_property
-#     def real_peaktimes(self) -> np.ndarray:
-#         return np.array([self.adjust_data_peaktime(f) for f in self.nfits])
-    
-#     @property
-#     def real_peaktime_errors(self) -> np.ndarray:
-#         return np.array([f.epeaktime for f in self.nfits])
-    
-#     def ckv_from_params(self, parameters: np.ndarray) -> np.ndarray:
-#         ev = self.param_mapper.get_event(parameters)
-#         print(ev)
-#         ckv = get_ckv(ev, self.cfg)
-#         return ckv
-
-#     @cached_property
-#     def real_output(self) -> np.ndarray:
-#         '''This is the fitted parameters for each counter triggered in the event. 
-#         They are the output data points to be compared to the model.
-#         '''
-#         pars = [np.array([self.adjust_data_peaktime(f), f.peak, f.risetime, f.falltime]) for f in self.nfits]
-#         return np.hstack(pars)
-    
-#     @cached_property
-#     def real_error(self) -> np.ndarray:
-#         '''This is the fitted parameters for each counter triggered in the event. 
-#         They are the output data points to be compared to the model.
-#         '''
-#         errs = [np.array([f.epeaktime * NICHE_TIMEBIN_SIZE, f.epeak, f.erisetime, f.efalltime]) for f in self.nfits]
-#         return np.hstack(errs)
-    
-#     @property
-#     def input_indices(self) -> np.ndarray:
-#         '''This is the enumeration of the terms of the chi-squared statistic.
-#         '''
-#         return np.arange(self.n_features * len(self.nfits))
-
-#     def get_output(self, parameters: np.ndarray) -> np.ndarray:
-#         '''This method gives the data output for a set of shower parameters.
-#         '''
-#         # ev = self.param_mapper.get_event(parameters)
-#         # print(ev)
-#         # ckv = get_ckv(ev, self.cfg)
-#         ckv = self.ckv_from_params(parameters)
-#         sigdict, times = ckv_signal_dict(ckv)
-
-#         #do tunka fits
-#         pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
-
-#         #tunka fit returns approximate index of peak, find times those corresponds to
-#         peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
-        
-#         #adjust times so biggest counter peaktime is the start
-#         peaktimes -= peaktimes[self.pas.argmax()]
-#         pb_array[:,0] = peaktimes
-#         return pb_array.flatten()
-    
-#     def get_pa_output(self, parameters: np.ndarray) -> np.ndarray:
-#         '''This method gets the pulse area from a sim.
-#         '''
-#         ckv = self.ckv_from_params(parameters)
-#         sigdict, _ = ckv_signal_dict(ckv)
-#         pa_array = np.array([do_pulse_integration(sigdict[name]) for name in self.nfit_dict])
-#         return pa_array
-    
-#     def get_normalized_pa_output(self, parameters: np.ndarray) -> np.ndarray:
-#         '''This method gets the pulse area from a sim.
-#         '''
-#         pa_array = self.get_pa_output(parameters)
-#         return pa_array / pa_array.sum()
-    
-#     def get_peaktimes_output(self, parameters: np.ndarray) -> np.ndarray:
-#         ckv = self.ckv_from_params(parameters)
-#         sigdict, times = ckv_signal_dict(ckv)
-
-#         #do tunka fits
-#         pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
-
-#         #tunka fit returns approximate index of peak, find times those corresponds to
-#         peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
-        
-#         #adjust times so biggest counter peaktime is the start
-#         peaktimes -= peaktimes[self.pas.argmax()]
-#         return peaktimes
-
-#     def chi_square(self, parameters: np.ndarray) -> float:
-#         '''This is a direct calculation of the chi square statistic for a set of shower 
-#         parameters.
-#         '''
-#         output = self.get_output(parameters)
-#         return ((self.real_output - output)**2/self.real_error**2).sum()
-
-#     def model(self, chi_square_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
-#         '''This is the model to be supplied to minuit. The indices are ignored.
-#         '''
-#         return self.get_output(parameters)
-    
-#     def tmodel(self, chi_square_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
-#         '''This is the model to be supplied to minuit. The indices are ignored.
-#         '''
-#         return self.get_peaktimes_output(parameters)
-    
-#     def pamodel(self, chi_square_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
-#         '''This is the model to be supplied to minuit. The indices are ignored.
-#         '''
-#         return self.get_pa_output(parameters)
-    
-#     def get_pulse_width_output(self, parameters):
-#         ckv = self.ckv_from_params(parameters)
-#         sigdict, _ = ckv_signal_dict(ckv)
-#         pa_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
-#         pulse_widths = pa_array[:,2] + pa_array[:,3]
-#         return pulse_widths
-    
-#     @property
-#     def real_pulse_widths(self):
-#         return np.array([f.risetime+f.falltime for f in self.nfits])
-    
-#     @property
-#     def real_pulse_width_error(self):
-#         return np.array([np.sqrt(f.erisetime**2+f.efalltime**2) for f in self.nfits])
-    
-#     def pwmodel(self, chi_square_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
-#         '''This is the model to be supplied to minuit. The indices are ignored.
-#         '''
-#         return self.get_pulse_width_output(parameters)
+def integrate_from_fit(wf: np.ndarray, pbs: np.ndarray) -> float:
+    intstart = int(np.floor(pbs[0] - 5.*pbs[2]))
+    intend   = int(np.ceil(pbs[0] + 5.*pbs[3]))
+    intsignal = wf[intstart:intend+1].sum()
+    return intsignal
 
 class ParamMapper(Protocol):
     '''This protocol maps a given set of parameters to an actual shower
@@ -327,7 +148,7 @@ class FitFeature(ABC):
         '''This method returns the Cherenkov light in each counter at each time bin.
         '''
         ev = self.param_mapper.get_event(parameters)
-        print(ev)
+        # print(ev)
         ckv = get_ckv(ev, self.cfg)
         return ckv
 
@@ -364,15 +185,20 @@ class FitFeature(ABC):
         peaktime_difference = trigtime_delta.astype('float64') + nfit.ns_diff - self.biggest_peaktime_difference
         return peaktime_difference
     
+    @cached_property
+    def peaktimes(self) -> np.ndarray:
+        return np.array([self.adjust_data_peaktime(f) for f in self.nfits])
+
     @property
     def nfit_dict(self) -> dict[str, NicheFit]:
         '''This is a dictionary of the Nichefit objects in the real event.
         '''
         return {f.name:f for f in self.nfits}
 
-    def model(self, input_indices: np.ndarray, parameters: np.ndarray) -> np.ndarray:
+    def model(self, input_indices: np.ndarray, *parameters) -> np.ndarray:
         '''This is the model to be supplied to minuit. The indices are ignored.
         '''
+        parameters = np.array(parameters)
         return self.get_output(parameters)
 
     def chi2(self, parameters: np.ndarray) -> float:
@@ -390,6 +216,12 @@ class FitFeature(ABC):
 
     @property
     @abstractmethod
+    def real_inputs() -> np.ndarray:
+        '''This property should return the inputs to the model.
+        '''
+
+    @property
+    @abstractmethod
     def error() -> np.ndarray:
         '''This property should return the errors in the real data.
         '''
@@ -401,17 +233,18 @@ class FitFeature(ABC):
     #     by fitting this feature.
     #     '''
 
-    @property
-    @abstractmethod
-    def output_size(self) -> int:
-        '''This should return the length of the output array.
-        '''
-
     @abstractmethod
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         '''This method should return the simulated feature when run with the given
         parameters.
         '''
+
+    def cost(self) -> LeastSquares:
+        return LeastSquares(self.real_inputs, 
+                            self.real_values, 
+                            self.error, 
+                            self.model,
+                            verbose=0)
 
 class PeakTimes(FitFeature):
     '''This is the container for the peaktimes fit feature.
@@ -419,7 +252,7 @@ class PeakTimes(FitFeature):
 
     @property
     def real_values(self) -> np.ndarray:
-        return np.array([self.adjust_data_peaktime(f) for f in self.nfits])
+        return self.peaktimes
     
     @property
     def error(self) -> np.ndarray:
@@ -428,6 +261,10 @@ class PeakTimes(FitFeature):
     @property
     def output_size(self) -> int:
         return len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
     
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
@@ -464,6 +301,10 @@ class PulseWidth(FitFeature):
     @property
     def output_size(self) -> int:
         return len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
 
 class PulseArea(FitFeature):
     '''This is the implementation of the pulse area fit feature.
@@ -488,6 +329,10 @@ class PulseArea(FitFeature):
     @property
     def output_size(self) -> int:
         return len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
 
 class AllTunka(FitFeature):
     '''This is the container for all tunka parameters as features simultaneously.
@@ -530,6 +375,10 @@ class AllTunka(FitFeature):
     def output_size(self) -> int:
         return 4 * len(self.nfits)
     
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
+    
 class Peak(FitFeature):
     '''This is the implementation of the pulse peak fit feature.
     '''
@@ -552,6 +401,10 @@ class Peak(FitFeature):
     @property
     def output_size(self) -> int:
         return len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
 
 class NormalizedPulseArea(PulseArea):
     '''This is the implementation of normalized pulse areas fit feature.
@@ -559,6 +412,10 @@ class NormalizedPulseArea(PulseArea):
     @property
     def output_size(self) -> int:
         return len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
 
     @cached_property
     def pa_sum(self) -> float:
@@ -574,6 +431,125 @@ class NormalizedPulseArea(PulseArea):
     
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         return super().get_output(parameters) / self.pa_sum
+
+class TimesWidthsAreas(FitFeature):
+
+    def __init__(self, nfits: list[NicheFit], param_mapper: ParamMapper, cfg: CounterConfig) -> None:
+        super().__init__(nfits, param_mapper, cfg)
+        self.peaktimes = PeakTimes(nfits, param_mapper, cfg)
+        self.pulse_widths = PulseWidth(nfits, param_mapper, cfg)
+        self.pulse_areas = NormalizedPulseArea(nfits, param_mapper, cfg)
+
+    @property
+    def output_size(self) -> int:
+        return 3*len(self.nfits)
+    
+    @property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(self.output_size)
+    
+    @cached_property
+    def real_values(self) -> np.ndarray:
+        return np.hstack((self.peaktimes.real_values, self.pulse_widths.real_values, self.pulse_areas.real_values))
+    
+    @cached_property
+    def error(self) -> np.ndarray:
+        return np.hstack((self.peaktimes.error, self.pulse_widths.error, self.pulse_areas.error))
+    
+    def get_output(self, parameters: np.ndarray) -> np.ndarray:
+        ckv = self.ckv_from_params(parameters)
+        sigdict, times = ckv_signal_dict(ckv)
+        #do tunka fits
+        pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
+        #tunka fit returns approximate index of peak, find times those corresponds to
+        peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
+        #adjust times so biggest counter peaktime is the start
+        peaktimes -= peaktimes[self.pas.argmax()]
+        # pa_array = np.array([do_pulse_integration(sigdict[name]) for name in self.nfit_dict])
+        pa_array = np.array([integrate_from_fit(sigdict[name],pbs) for name, pbs in zip(self.nfit_dict,pb_array)])
+        pulse_widths = pb_array[:,2] + pb_array[:,3]
+        return np.hstack((peaktimes,pulse_widths,pa_array/pa_array.sum()))
+
+class AllSamples(FitFeature):
+
+    @cached_property
+    def biggest_trig2peak_diff(self) -> float:
+        return (self.nfit_dict[self.biggest_counter].waveform.argmax() - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
+
+    def data_trigtime2peaktime(self, nfit: NicheFit) -> float:
+        '''This method calculates the peaktime of the 'nfit' counter relative to the peaktime of 
+        the largest trigger.
+        '''
+        trigtime_delta = nfit.trigtime() - self.biggest_trigtime
+        ns_diff = (nfit.waveform.argmax() - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
+        return trigtime_delta.astype('float64') + ns_diff - self.biggest_trig2peak_diff
+    
+    def get_real_times(self, fit: NicheFit) -> np.ndarray:
+        '''This method calculates the time values for each waveform sample in a real data NicheFit.
+        '''
+        times = np.arange(NICHE_TIMEBIN_SIZE*WAVEFORM_SIZE, step = NICHE_TIMEBIN_SIZE)
+        # times = np.arange(0.,float(WAVEFORM_SIZE)) * NICHE_TIMEBIN_SIZE
+        peaktime = self.data_trigtime2peaktime(fit)
+        times -= times[fit.waveform.argmax()]
+        times += peaktime
+        return times
+
+    @cached_property
+    def real_times_array(self) -> np.ndarray:
+        ''''''
+        return np.array([self.get_real_times(f) for f in self.nfits])
+
+    @cached_property
+    def real_inputs(self) -> np.ndarray:
+        return self.real_times_array.flatten()
+    
+    @cached_property
+    def real_values(self) -> np.ndarray:
+        return np.array([f.waveform - f.baseline for f in self.nfits]).flatten()
+    
+    @cached_property
+    def error(self) -> np.ndarray:
+        return np.array([np.full(WAVEFORM_SIZE,f.baseline_error) for f in self.nfits]).flatten()
+    
+    @staticmethod
+    def trace_at_times(sim_wf: np.ndarray, sim_times: np.ndarray, real_trace_times: np.ndarray) -> np.ndarray:
+        return sim_wf[np.searchsorted(sim_times,real_trace_times, side='left')]
+        # return np.interp(real_trace_times,sim_times,sim_wf, left=0., right=0.)
+
+    def get_output(self, parameters: np.ndarray) -> np.ndarray:
+        ckv = self.ckv_from_params(parameters)
+        sigdict, times = ckv_signal_dict(ckv)
+        times -= times[sigdict[self.biggest_counter].argmax()]
+        wfs_at_real_times = np.array([self.trace_at_times(sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)])
+        return wfs_at_real_times.flatten()
+        # wfs = np.empty((len(self.nfits),WAVEFORM_SIZE))
+        # for i,name in enumerate(self.nfit_dict):
+        #     peak_index = int(np.round(self.nfit_dict[name].peak))
+        #     wfs[i] = sigdict[name][sigdict[name].argmax()-peak_index:sigdict[name].argmax()+WAVEFORM_SIZE-peak_index]
+        # return wfs.flatten()
+    
+class Samples(FitFeature):
+    @cached_property
+    def real_inputs(self) -> np.ndarray:
+        return np.arange(100*len(self.nfits))
+    
+    def get_pulse(self, full_wf: np.ndarray) -> np.ndarray:
+        max = full_wf.argmax()
+        return full_wf[max-50:max+50]
+
+    @cached_property
+    def real_values(self) -> np.ndarray:
+        return np.array([self.get_pulse(f.waveform-f.baseline) for f in self.nfits]).flatten()
+    
+    @cached_property
+    def error(self) -> np.ndarray:
+        return np.array([np.full(100,f.baseline_error) for f in self.nfits]).flatten()
+
+    def get_output(self, parameters: np.ndarray) -> np.ndarray:
+        ckv = self.ckv_from_params(parameters)
+        sigdict, times = ckv_signal_dict(ckv)
+        wfs = np.array([self.get_pulse(sigdict[name]) for name in self.nfit_dict])
+        return wfs.flatten()
 
 @dataclass
 class FitParam:
@@ -594,8 +570,9 @@ def make_guess(ty: TyroFit, pf: NichePlane) -> list[FitParam]:
         FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.)),
         FitParam('corex',ty.core_estimate[0],ty.xlimits, 5.),
         FitParam('corey',ty.core_estimate[1],ty.ylimits, 5.),
-        FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
-        FitParam('x0',0.,(0,100),1),
+        # FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
+        FitParam('corez',-25.7,(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
+        FitParam('x0',0.,(-100,100),1),
         FitParam('lambda',70., (0,100),1)
     ]
     return parlist
@@ -680,12 +657,12 @@ class BasicParams:
 def do_feature_fit(feature: FitFeature, guess_pars: list[FitParam]) -> Minuit:
     '''This function is a wrapper for the procedure of doing a fit with iminuit.
     '''
-    ls = LeastSquares(np.arange(feature.output_size), 
-                      feature.real_values, 
-                      feature.error, 
-                      feature.model,
-                      verbose=1)
-    m = Minuit(ls, 
+    # ls = LeastSquares(feature.real_inputs, 
+    #                   feature.real_values, 
+    #                   feature.error, 
+    #                   feature.model,
+    #                   verbose=1)
+    m = Minuit(feature.cost(), 
                [par.value for par in guess_pars], 
                name = [par.name for par in guess_pars])
     for par in guess_pars:
@@ -701,13 +678,13 @@ def do_feature_fit(feature: FitFeature, guess_pars: list[FitParam]) -> Minuit:
 def init_minuit(feature: FitFeature, guess_pars: list[FitParam]) -> Minuit:
     '''This function is a wrapper for the procedure of doing a fit with iminuit.
     '''
-    ls = LeastSquares(np.arange(feature.output_size), 
-                      feature.real_values, 
-                      feature.error, 
-                      feature.model,
-                      verbose=1)
-    m = Minuit(ls, 
-               [par.value for par in guess_pars], 
+    # ls = LeastSquares(np.arange(feature.output_size), 
+    #                   feature.real_values, 
+    #                   feature.error, 
+    #                   feature.model,
+    #                   verbose=0)
+    m = Minuit(feature.cost(), 
+               *[par.value for par in guess_pars], 
                name = [par.name for par in guess_pars])
     for par in guess_pars:
         m.limits[par.name] = par.limits
@@ -740,97 +717,136 @@ if __name__ == '__main__':
     pars = [500.,2.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.7,0,70]
     ev = BasicParams.get_event(pars)
     pe = ProcessEvents(cfg, frozen_noise=False)
-    
-    xmax = []
-    nmax = []
-    zenith = []
-    azimuth = []
-    corex = []
-    corey = []
-    chi2=[]
-    for i in range(100):
-        real_nfits = pe.gen_nfits_from_event(ev)
-        pf = NichePlane(real_nfits)
-        ty = tyro(real_nfits)
+    real_nfits = pe.gen_nfits_from_event(ev)
+    pf = NichePlane(real_nfits)
+    ty = tyro(real_nfits)
 
-        guess = make_guess(ty, pf)
-        guess = LogXNParams.adjust_guess(guess)
-
-        pt = PeakTimes(real_nfits, LogXNParams, cfg)
-        pt.target_parameters = ['zenith','azimuth']
-        m = init_minuit(pt, guess)
-        m.tol = .0001
-        m.simplex()
-        tpguess = update_guess(m)
-
-        pw = PulseWidth(real_nfits, LogXNParams, cfg)
-        pw.target_parameters = ['xmax']
-        m = init_minuit(pw, tpguess)
-        m.simplex(ncall=5)
-        xmaxguess = update_guess(m)
-
-        pa = PulseArea(real_nfits, LogXNParams, cfg)
-        pa.target_parameters = ['nmax']
-        m = init_minuit(pa, xmaxguess)
-        m.simplex(ncall=5)
-        nmaxguess = update_guess(m)
-
-        pa = NormalizedPulseArea(real_nfits, LogXNParams, cfg)
-        pa.target_parameters = ['xmax','nmax','corex','corey']
-        m = init_minuit(pa, nmaxguess)
-        m.tol = .0001
-        m.simplex()
-        coreguess = update_guess(m)
-
-        # m = init_minuit(pw, coreguess)
-        # coreguess = update_guess(m)
-
-        at = AllTunka(real_nfits, LogXNParams, cfg)
-        at.target_parameters = ['xmax','nmax','corex','corey']
-        m = init_minuit(at, coreguess)
-        m.simplex()
-        allguess = update_guess(m)
-
-        # p = Peak(real_nfits, BasicParams, cfg)
-        # m = init_minuit(p, allguess)
-
-        fitpars = [p.value for p in m.params]
-        e = LogXNParams.get_event(fitpars)
-        xmax.append(e.Xmax)
-        nmax.append(e.Nmax)
-        zenith.append(e.zenith)
-        azimuth.append(e.azimuth)
-        corex.append(e.corex)
-        corey.append(e.corey)
-        chi2.append(at.chi2(fitpars))
-
+    s = AllSamples(real_nfits,BasicParams,cfg)
     plt.figure()
-    plt.hist(xmax,bins=50)
-    plt.title('xmax')
+    plt.plot(s.real_values)
+    testpars = pars.copy()
+    testpars[2] -=.3
+    o = s.get_output(testpars)
+    plt.plot(o)
 
-    plt.figure()
-    plt.hist(nmax,bins=50)
-    plt.title('nmax')
+    ckv = s.ckv_from_params(pars)
+    sigdict, times = ckv_signal_dict(ckv)
+    times -= times[sigdict[s.biggest_counter].argmax()]
 
-    plt.figure()
-    plt.hist(corex,bins=50)
-    plt.title('corex')
+    for f in s.nfits:
+        wf = f.waveform
+        t = s.get_real_times(f)
+        plt.figure()
+        plt.title(f'{f.name}')
+        plt.plot(t,wf-wf[:400].mean())
+        plt.plot(times,sigdict[f.name])
 
-    plt.figure()
-    plt.hist(corey,bins=50)
-    plt.title('corey')
+    # xmax = []
+    # nmax = []
+    # zenith = []
+    # azimuth = []
+    # corex = []
+    # corey = []
+    # chi2=[]
+    # for i in range(100):
+    #     real_nfits = pe.gen_nfits_from_event(ev)
+    #     pf = NichePlane(real_nfits)
+    #     ty = tyro(real_nfits)
 
-    plt.figure()
-    plt.hist(zenith,bins=50)
-    plt.title('zenith')
+    #     guess = make_guess(ty, pf)
+    #     guess = LogXNParams.adjust_guess(guess)
 
-    plt.figure()
-    plt.hist(azimuth,bins=50)
-    plt.title('azimuth')
+    #     pt = PeakTimes(real_nfits, LogXNParams, cfg)
+    #     pt.target_parameters = ['zenith','azimuth']
+    #     m = init_minuit(pt, guess)
+    #     m.tol = .0001
+    #     m.simplex()
+    #     tpguess = update_guess(m)
 
-    plt.figure()
-    plt.hist(chi2,bins=50)
-    plt.title('chi2')
+    #     pw = PulseWidth(real_nfits, LogXNParams, cfg)
+    #     pw.target_parameters = ['xmax']
+    #     m = init_minuit(pw, tpguess)
+    #     m.simplex(ncall=10)
+    #     xmaxguess = update_guess(m)
+
+    #     pa = PulseArea(real_nfits, LogXNParams, cfg)
+    #     pa.target_parameters = ['nmax']
+    #     m = init_minuit(pa, xmaxguess)
+    #     m.simplex(ncall=10)
+    #     nmaxguess = update_guess(m)
+
+    #     pa = NormalizedPulseArea(real_nfits, LogXNParams, cfg)
+    #     pa.target_parameters = ['xmax','nmax','corex','corey']
+    #     m = init_minuit(pa, nmaxguess)
+    #     m.tol = .0001
+    #     m.simplex()
+    #     coreguess = update_guess(m)
+
+    #     # m = init_minuit(pw, coreguess)
+    #     # coreguess = update_guess(m)
+
+    #     at = AllTunka(real_nfits, LogXNParams, cfg)
+    #     at.target_parameters = ['xmax','nmax','zenith','azimuth','corex','corey']
+    #     m = init_minuit(at, coreguess)
+    #     m.simplex()
+
+    #     # curr_xmax = m.params['xmax'].value
+    #     # curr_nmax = m.params['nmax'].value
+    #     # curr_z = m.params['zenith'].value
+    #     # dz = np.deg2rad(1)
+    #     # curr_a = m.params['azimuth'].value
+    #     # curr_corex = m.params['corex'].value
+    #     # dcore = 2.
+    #     # curr_corey = m.params['corey'].value
+    #     # m.limits['xmax'] = (curr_xmax + np.log(.99), curr_xmax + np.log(1.01))
+    #     # m.limits['nmax'] = (curr_nmax + np.log(.99), curr_nmax + np.log(1.01))
+    #     # m.limits['zenith'] = (curr_z - dz, curr_z + dz)
+    #     # m.limits['azimuth'] = (curr_a - dz, curr_a + dz)
+    #     # m.limits['corex'] = (curr_corex - dcore, curr_corex + dcore)
+    #     # m.limits['corey'] = (curr_corey - dcore, curr_corey + dcore)
+    #     # m.migrad()
+    #     allguess = update_guess(m)
+
+    #     # p = Peak(real_nfits, BasicParams, cfg)
+    #     # m = init_minuit(p, allguess)
+
+    #     fitpars = [p.value for p in m.params]
+    #     e = LogXNParams.get_event(fitpars)
+    #     xmax.append(e.Xmax)
+    #     nmax.append(e.Nmax)
+    #     zenith.append(e.zenith)
+    #     azimuth.append(e.azimuth)
+    #     corex.append(e.corex)
+    #     corey.append(e.corey)
+    #     chi2.append(at.chi2(fitpars))
+
+    # plt.figure()
+    # plt.hist(xmax,bins=20)
+    # plt.title('xmax')
+
+    # plt.figure()
+    # plt.hist(nmax,bins=20)
+    # plt.title('nmax')
+
+    # plt.figure()
+    # plt.hist(corex,bins=20)
+    # plt.title('corex')
+
+    # plt.figure()
+    # plt.hist(corey,bins=20)
+    # plt.title('corey')
+
+    # plt.figure()
+    # plt.hist(zenith,bins=20)
+    # plt.title('zenith')
+
+    # plt.figure()
+    # plt.hist(azimuth,bins=20)
+    # plt.title('azimuth')
+
+    # plt.figure()
+    # plt.hist(chi2,bins=20)
+    # plt.title('chi2')
 
     # ngrid = 11
     # real_nfits = pe.gen_nfits_from_event(ev)

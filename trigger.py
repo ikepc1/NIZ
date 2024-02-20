@@ -102,14 +102,14 @@ class TriggerSim:
     def __init__(self, cfg: CounterConfig) -> None:
         self.cfg = cfg
         self.array_shape = (len(cfg.active_counters), WAVEFORM_SIZE)
+        self.tunka = TunkaPMTPulse(t0=40)
 
-    @staticmethod
-    def tunka_convolve(pes: np.ndarray, times: np.ndarray, delay: float) -> np.ndarray:
+    def tunka_convolve(self, pes: np.ndarray, times: np.ndarray, delay: float) -> np.ndarray:
         '''This method convolves the photoelectron signal of a counter with a
         normalized Tunka style pmt pulse.
         '''
-        tunka = TunkaPMTPulse(t0=delay)
-        return fftconvolve(pes, tunka.tunka_pdf(times), mode='same')
+        # tunka = TunkaPMTPulse(t0=delay)
+        return fftconvolve(pes, self.tunka.tunka_pdf(times), mode='same')
     
     @staticmethod
     def NICHE_bins(g_time_bins: np.ndarray) -> np.ndarray:
@@ -258,4 +258,5 @@ def gen_niche_trigger(ckv: CherenkovOutput, noise: np.ndarray) -> NicheTriggers:
     # fadc_counts += generate_background(ckv.cfg.noise_files)
     fadc_counts += noise
     fadc_counts[fadc_counts>4096.] = 4096.
+    # fadc_counts = np.round(fadc_counts)
     return NicheTriggers(*ts.gen_triggers(fadc_counts))

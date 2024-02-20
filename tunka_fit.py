@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import quad
+from scipy.integrate import quad, trapz
 
 class TunkaPMTPulse:
     '''This class normalizes the Tunka pmt pulse functional form as a pdf'''
@@ -12,6 +12,7 @@ class TunkaPMTPulse:
         self.ft = ft
         self.bl = bl
         self.normalize()
+        # print(self.C0)
 
     @property
     def ll(self):
@@ -64,4 +65,8 @@ class TunkaPMTPulse:
     def normalize(self) -> None:
         '''This method sets the normalization constant.
         '''
-        self.C0 /= quad(self.tunka_pdf, self.ll, self.ul)[0]
+        # self.C0 /= quad(self.tunka_pdf, self.ll, self.ul)[0]
+        tvals = np.linspace(self.ll, self.ul, 100)
+        pdfvals = self.tunka_pdf(tvals)
+        self.C0 /= trapz(pdfvals, tvals)
+
