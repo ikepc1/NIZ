@@ -10,6 +10,6 @@ cfg = CounterConfig(data_files, noise_files)
 pars = [500.,2.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.,0,70]
 ev = BasicParams.get_event(pars)
 real_nfits = ProcessEvents(cfg, frozen_noise=True).gen_nfits_from_event(ev)
-pt = AllTunka(real_nfits, BasicParams, cfg)
+pt = AllSamples(real_nfits, BasicParams, cfg)
 
 cProfile.run('pt.model([0],*pars)')

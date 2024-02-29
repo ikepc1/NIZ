@@ -88,11 +88,11 @@ def get_times_array(nfits: list[NicheFit]) -> np.ndarray:
     trigtimes = np.float64(trigtimes - trigtimes.min())
     return trigtimes
 
-def ckv_signal_dict(ckv: CherenkovOutput) -> tuple[dict[str,np.ndarray],np.ndarray]:
+def ckv_signal_dict(ckv: CherenkovOutput, t_offset: float = 0.) -> tuple[dict[str,np.ndarray],np.ndarray]:
     '''This function compiles the waveforms from CHASM into a dictionary where
     the keys are the counter names.
     '''
-    fadc, times = rawphotons2fadc(ckv)
+    fadc, times = rawphotons2fadc(ckv, t_offset)
     return {name:f for name, f in zip(ckv.cfg.active_counters, fadc)}, times
 
 def do_wf_fit(wf: np.ndarray) -> np.ndarray:
@@ -207,6 +207,9 @@ class FitFeature(ABC):
         '''
         output = self.get_output(parameters)
         return ((self.real_values - output)**2/self.error**2).sum()
+    
+    def lnlike(self, parameters: np.ndarray) -> float:
+        return -.5 * self.chi2(parameters)
 
     @property
     @abstractmethod
@@ -268,7 +271,7 @@ class PeakTimes(FitFeature):
     
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
-        sigdict, times = ckv_signal_dict(ckv)
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
 
         #do tunka fits
         pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
@@ -279,13 +282,28 @@ class PeakTimes(FitFeature):
         #adjust times so biggest counter peaktime is the start
         peaktimes -= peaktimes[self.pas.argmax()]
         return peaktimes
+    
+class OffsetPeakTimes(PeakTimes):
+    def get_output(self, parameters: np.ndarray) -> np.ndarray:
+        ckv = self.ckv_from_params(parameters)
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
+
+        #do tunka fits
+        pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
+
+        #tunka fit returns approximate index of peak, find times those corresponds to
+        peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
+        
+        #adjust times so biggest counter peaktime is the start
+        # peaktimes -= peaktimes[self.pas.argmax()]
+        return peaktimes
 
 class PulseWidth(FitFeature):
     '''This is the implementation of the pulse width fit feature.
     '''
     def get_output(self, parameters):
         ckv = self.ckv_from_params(parameters)
-        sigdict, _ = ckv_signal_dict(ckv)
+        sigdict, _ = ckv_signal_dict(ckv, parameters[-1])
         pa_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
         pulse_widths = pa_array[:,2] + pa_array[:,3]
         return pulse_widths
@@ -322,7 +340,7 @@ class PulseArea(FitFeature):
         '''This method gets the pulse area from a sim.
         '''
         ckv = self.ckv_from_params(parameters)
-        sigdict, _ = ckv_signal_dict(ckv)
+        sigdict, _ = ckv_signal_dict(ckv, parameters[-1])
         pa_array = np.array([do_pulse_integration(sigdict[name]) for name in self.nfit_dict])
         return pa_array
     
@@ -358,7 +376,7 @@ class AllTunka(FitFeature):
         '''This method gives the data output for a set of shower parameters.
         '''
         ckv = self.ckv_from_params(parameters)
-        sigdict, times = ckv_signal_dict(ckv)
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
 
         #do tunka fits
         pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
@@ -367,7 +385,7 @@ class AllTunka(FitFeature):
         peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
         
         #adjust times so biggest counter peaktime is the start
-        peaktimes -= peaktimes[self.pas.argmax()]
+        # peaktimes -= peaktimes[self.pas.argmax()]
         pb_array[:,0] = peaktimes
         return pb_array.flatten()
     
@@ -393,7 +411,7 @@ class Peak(FitFeature):
     
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
-        sigdict, _ = ckv_signal_dict(ckv)
+        sigdict, _ = ckv_signal_dict(ckv, parameters[-1])
         pa_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
         peak_array = pa_array[:,1]
         return peak_array
@@ -458,20 +476,21 @@ class TimesWidthsAreas(FitFeature):
     
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
-        sigdict, times = ckv_signal_dict(ckv)
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
         #do tunka fits
         pb_array = np.array([do_wf_fit(sigdict[name])[:-1] for name in self.nfit_dict])
         #tunka fit returns approximate index of peak, find times those corresponds to
         peaktimes = np.interp(pb_array[:,0], np.arange(len(times)), times)
         #adjust times so biggest counter peaktime is the start
-        peaktimes -= peaktimes[self.pas.argmax()]
+        # peaktimes -= peaktimes[self.pas.argmax()]
         # pa_array = np.array([do_pulse_integration(sigdict[name]) for name in self.nfit_dict])
         pa_array = np.array([integrate_from_fit(sigdict[name],pbs) for name, pbs in zip(self.nfit_dict,pb_array)])
         pulse_widths = pb_array[:,2] + pb_array[:,3]
         return np.hstack((peaktimes,pulse_widths,pa_array/pa_array.sum()))
 
 class AllSamples(FitFeature):
-
+    wf_start = TRIGGER_POSITION - 10
+    wf_end = TRIGGER_POSITION + 10
     @cached_property
     def biggest_trig2peak_diff(self) -> float:
         return (self.nfit_dict[self.biggest_counter].waveform.argmax() - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
@@ -497,36 +516,44 @@ class AllSamples(FitFeature):
     @cached_property
     def real_times_array(self) -> np.ndarray:
         ''''''
-        return np.array([self.get_real_times(f) for f in self.nfits])
+        return np.array([self.get_real_times(f)[self.wf_start:self.wf_end] for f in self.nfits])
 
     @cached_property
     def real_inputs(self) -> np.ndarray:
         return self.real_times_array.flatten()
+        # return np.arange(len(self.real_times_array.flatten()))
     
     @cached_property
     def real_values(self) -> np.ndarray:
-        return np.array([f.waveform - f.baseline for f in self.nfits]).flatten()
+        return np.array([(f.waveform - f.baseline)[self.wf_start:self.wf_end] for f in self.nfits]).flatten()
     
     @cached_property
     def error(self) -> np.ndarray:
-        return np.array([np.full(WAVEFORM_SIZE,f.baseline_error) for f in self.nfits]).flatten()
+        return np.array([np.full(self.wf_end-self.wf_start,f.baseline_error) for f in self.nfits]).flatten()
     
     @staticmethod
     def trace_at_times(sim_wf: np.ndarray, sim_times: np.ndarray, real_trace_times: np.ndarray) -> np.ndarray:
         return sim_wf[np.searchsorted(sim_times,real_trace_times, side='left')]
         # return np.interp(real_trace_times,sim_times,sim_wf, left=0., right=0.)
 
+    @staticmethod
+    def wf_baseline_parabola(wf: np.ndarray, tol:float=1.e-6) -> np.ndarray:
+        wf_start = np.argmax(wf[wf<1.e-6])
+        wf_rev = wf[::-1]
+        wf_end = np.argmax(wf_rev[wf_rev<1.e-6])
+        if wf_end == 0 or wf_start == 0:
+            return wf
+        wf[:wf_start] -= np.arange(wf_start)[::-1]**2
+        wf[-wf_end:] -= np.arange(wf_end)**2
+        return wf
+
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
-        sigdict, times = ckv_signal_dict(ckv)
-        times -= times[sigdict[self.biggest_counter].argmax()]
-        wfs_at_real_times = np.array([self.trace_at_times(sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)])
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
+        parabase_sigdict = {name:self.wf_baseline_parabola(sigdict[name]) for name in sigdict}
+        # times -= times[sigdict[self.biggest_counter].argmax()]
+        wfs_at_real_times = np.array([self.trace_at_times(parabase_sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)])
         return wfs_at_real_times.flatten()
-        # wfs = np.empty((len(self.nfits),WAVEFORM_SIZE))
-        # for i,name in enumerate(self.nfit_dict):
-        #     peak_index = int(np.round(self.nfit_dict[name].peak))
-        #     wfs[i] = sigdict[name][sigdict[name].argmax()-peak_index:sigdict[name].argmax()+WAVEFORM_SIZE-peak_index]
-        # return wfs.flatten()
     
 class Samples(FitFeature):
     @cached_property
@@ -547,7 +574,7 @@ class Samples(FitFeature):
 
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
-        sigdict, times = ckv_signal_dict(ckv)
+        sigdict, times = ckv_signal_dict(ckv, parameters[-1])
         wfs = np.array([self.get_pulse(sigdict[name]) for name in self.nfit_dict])
         return wfs.flatten()
 
@@ -559,21 +586,27 @@ class FitParam:
     value: float
     limits: tuple[float]
     error: float
+    fixed: bool = False
+
+    def parguess(self, size: int) -> np.ndarray:
+        return np.random.normal(self.value, self.error, size = size)
 
 def make_guess(ty: TyroFit, pf: NichePlane) -> list[FitParam]:
     '''This function makes a guess for the fit parameters.
     '''
     parlist = [
-        FitParam('xmax', 300., (300., 600.), 50.),
-        FitParam('nmax', 1.e5, (1.e5, 1.e7), 1.e5),
+        FitParam('xmax', 400., (300., 600.), 50.),
+        FitParam('nmax', 1.e6, (1.e5, 1.e7), 1.e5),
         FitParam('zenith', pf.theta, (pf.theta -.1, pf.theta +.1), np.deg2rad(1.)),
         FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.)),
         FitParam('corex',ty.core_estimate[0],ty.xlimits, 5.),
         FitParam('corey',ty.core_estimate[1],ty.ylimits, 5.),
         # FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
-        FitParam('corez',-25.7,(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
-        FitParam('x0',0.,(-100,100),1),
-        FitParam('lambda',70., (0,100),1)
+        # FitParam('corez',-25.7,(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
+        FitParam('corez',-25.7,(-25.7,-25.7), 1., fixed=True),
+        FitParam('x0',0.,(0,0),1, fixed=True),
+        FitParam('lambda',70., (70.,70.),1, fixed=True),
+        FitParam('t_offset', 100., (0, 1.5e2), 10.,fixed=False)
     ]
     return parlist
 
@@ -699,6 +732,12 @@ def update_guess(m: Minuit) -> list[FitParam]:
     a list of my custom FitParam objects.
     '''
     return [FitParam(p.name,p.value,(p.lower_limit, p.upper_limit),p.error) for p in m.params]
+
+def update_guess_values(guess: list[FitParam], m: Minuit) -> list[FitParam]:
+    '''This function takes a minuit object and maps the parameters back to
+    a list of my custom FitParam objects.
+    '''
+    return [FitParam(p.name,p.value,(p.lower_limit, p.upper_limit),gp.error,gp.fixed) for p, gp in zip(m.params,guess)]
 
 def fit_procedure(ty: TyroFit, pf: NichePlane) -> Minuit:
     '''This function is the full procedure for fitting a NICHE event.

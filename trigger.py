@@ -55,7 +55,7 @@ def bin_photons(photons: np.ndarray, original_times: np.ndarray) -> np.ndarray:
     bins = photon_time_bins()
     return np.histogram(original_times, bins=bins, weights=photons, density = False)
 
-def gen_photon_signal(n_cerenk_photons: np.ndarray, original_time_bins: np.ndarray) -> tuple:
+def gen_photon_signal(n_cerenk_photons: np.ndarray, original_time_bins: np.ndarray, t_offset: float = 0.) -> tuple:
     '''This method takes previously generated Cherenkov waveforms and
     centers it within an array the size PHOTONS_WINDOW_SIZE.
     n_photons: a rank 2 numpy array of photon #s of shape (#counters, #time bins)
@@ -66,8 +66,9 @@ def gen_photon_signal(n_cerenk_photons: np.ndarray, original_time_bins: np.ndarr
     array of photon numbers
     shape: (#counters, PHOTONS_WINDOW_SIZE)
     '''
+    shifted_timebins = original_time_bins + t_offset
     signal_array = np.zeros(array_size(n_cerenk_photons.shape[0]))
-    for i, (nps, otb) in enumerate(zip(n_cerenk_photons, original_time_bins)):
+    for i, (nps, otb) in enumerate(zip(n_cerenk_photons, shifted_timebins)):
         signal_array[i], bins = bin_photons(nps, otb)
     return signal_array, bins
 
@@ -236,9 +237,9 @@ class NicheTriggers:
         for name, wf, t in zip(self.names, self.waveforms, self.times):
             self.cts[name] = CounterTrigger(name,wf,t,self.datebytes)
 
-def rawphotons2fadc(ckv: CherenkovOutput) -> tuple[np.ndarray]:
+def rawphotons2fadc(ckv: CherenkovOutput, t_offset: float) -> tuple[np.ndarray]:
     incident_ckv_summed = sum_over_wavelengths(ckv.photons)
-    incident_photons, photon_bins = gen_photon_signal(incident_ckv_summed,ckv.times)
+    incident_photons, photon_bins = gen_photon_signal(incident_ckv_summed,ckv.times,t_offset)
     photon_times = bin_medians(photon_bins)
     ts = TriggerSim(ckv.cfg)
     electrons = ts.gen_electron_signal(incident_photons, photon_times)
