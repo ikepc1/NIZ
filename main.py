@@ -39,10 +39,11 @@ def main(data_date_and_time: str) -> MCRun:
 
     #get real data events and perform reconstruction
     print('Processing nightsky data...')
-    ns_df = init_niche_nightsky_df(cfg)
+    # ns_df = init_niche_nightsky_df(cfg)
+    ns_df = None
 
     #recon real data
-    run_dataframe_recon(ns_df)
+    # run_dataframe_recon(ns_df)
 
     #Throw shower parameters
     shower_params = gen_params_in_bins(cfg)
@@ -51,10 +52,10 @@ def main(data_date_and_time: str) -> MCRun:
     shower_dataframes = []
     for params in shower_params:
         df = process_energy_bin(params, cfg)
-        run_dataframe_recon(df)
+        guesses = run_dataframe_recon(df,cfg)
         shower_dataframes.append(df)
 
-    return MCRun(cfg, shower_dataframes, ns_df)
+    return MCRun(cfg, shower_dataframes, ns_df), guesses
 
 def event_ntriggers(df: pd.DataFrame) -> np.ndarray:
     lens = []
@@ -66,16 +67,39 @@ if __name__  == '__main__':
     from utils import plot_generator
     date_time = sys.argv[1]
     np.seterr(all="ignore")
+    #get data files and corresponding noise files for given night
+    data_files = get_data_files(date_time)
+    noise_files = [preceding_noise_file(f) for f in data_files]
 
-    mc = main(str(date_time))
+    #set config object with counters active in data part
+    cfg = CounterConfig(data_files, noise_files)
 
-    mc_ev_lens = event_ntriggers(mc.mc[0])
-    ns_ev_lens = event_ntriggers(mc.ns)
-    bins = .5 + np.arange(13)
+    #get real data events and perform reconstruction
+    print('Processing nightsky data...')
+    # ns_df = init_niche_nightsky_df(cfg)
+    ns_df = None
 
-    plt.ion()
-    plt.figure()
-    plt.hist(mc_ev_lens,label = 'mc events',density=True, histtype='step',bins=bins)
-    plt.hist(ns_ev_lens,label = 'ns events',density=True, histtype='step',bins=bins)
-    plt.legend()
+    #recon real data
+    # run_dataframe_recon(ns_df)
+
+    #Throw shower parameters
+    shower_params = gen_params_in_bins(cfg)
+
+    #Simulate showers for each energy bin
+    shower_dataframes = []
+    for params in shower_params:
+        df = process_energy_bin(params, cfg)
+        fitdf, evdf, guesses = run_dataframe_recon(df,cfg)
+        shower_dataframes.append(df)
+
+    # mc_ev_lens = event_ntriggers(mc.mc[0])
+    # ns_ev_lens = event_ntriggers(mc.ns)
+    # bins = .5 + np.arange(13)
+
+    # plt.ion()
+    # plt.figure()
+    # plt.hist(mc_ev_lens,label = 'mc events',density=True, histtype='step',bins=bins)
+    # plt.hist(ns_ev_lens,label = 'ns events',density=True, histtype='step',bins=bins)
+    # plt.legend()
+    
 

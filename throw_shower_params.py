@@ -25,7 +25,7 @@ def gen_core_pos(r: float, cfg: CounterConfig, N_events: int = 100) -> tuple[np.
     '''
     rs = r * np.sqrt(np.random.uniform(size = N_events))
     phis = gen_azimuths(N_events) #random phis
-    zs = np.full_like(phis, cfg.positions_array[:,2].min())
+    zs = np.zeros_like(phis)
     return np.vstack((rs * np.cos(phis), rs * np.sin(phis), zs)).T + cfg.counter_center
 
 def Nmax(E: float | np.ndarray) -> float:
@@ -95,12 +95,13 @@ class MCParams:
     cfg: CounterConfig
     lEmin: float = 14.
     lEmax: float = 17.
-    gamma: float = -3.
+    gamma: float = -2.
     N_events: int = 1000
     # radius: float = 5000.
 
     def __post_init__(self) -> None:
-        self.radius = (self.lEmin / MIN_LE)**3 * THROW_RADIUS
+        # self.radius = (self.lEmin / MIN_LE)**3 * THROW_RADIUS
+        self.radius = THROW_RADIUS
         self.Emin = 10**self.lEmin
         self.Emax = 10**self.lEmax
 
@@ -121,18 +122,21 @@ class MCParams:
         cores = gen_core_pos(self.radius, self.cfg, N_events=self.N_events)
         params_dict = {
                 'E': Es,
-                'Xmax': Xmax_of_lE(np.log10(Es)),     
-                'Nmax': Nmax(Es),
+                'xmax': Xmax_of_lE(np.log10(Es)),     
+                'nmax': Nmax(Es),
                 'zenith': gen_zeniths(self.N_events),
                 'azimuth': gen_azimuths(self.N_events),
-                'corex': cores[:,0],
-                'corey': cores[:,1],
+                # 'corex': cores[:,0],
+                # 'corey': cores[:,1],
+                'corex': np.full_like(cores[:,0],437.),
+                'corey': np.full_like(cores[:,0],-660.),
                 'corez': cores[:,2],
                 'X0': np.zeros_like(cores[:,0]),
                 'Lambda': np.full_like(cores[:,0], 70.)
             }
         params_dict['Fit'] = np.full(self.N_events,np.NAN)
         params_dict['Plane Fit'] = np.full(self.N_events,np.NAN)
+        params_dict['guess'] = np.empty(self.N_events, dtype='O')
         for counter_name in self.cfg.active_counters:
             params_dict[counter_name] = np.full(self.N_events,np.NAN)
         return pd.DataFrame.from_dict(params_dict)

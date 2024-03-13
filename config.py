@@ -2,6 +2,8 @@ from dataclasses import dataclass, field, fields
 import numpy as np
 from pathlib import Path
 
+from atmosphere import CorsikaAtmosphere, Atmosphere
+
 '''constants'''
 #paths
 RAW_DATA_PATH = '/home/isaac/niche_data/'
@@ -19,12 +21,12 @@ TRIGGER_POSITION = 524
 
 #MC Parameters
 N_ENERGY_BINS = 1
-MIN_LE = 14.
-MAX_LE = 18.
+MIN_LE = 15.
+MAX_LE = 15.2
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
-N_THROWN = 8
-THROW_RADIUS = 300. #meters per 10^12
+N_THROWN = 8*20
+THROW_RADIUS = 0. #meters per 10^12
 
 #CHASM inputs
 MIN_WAVELENGTH = 300.
@@ -202,5 +204,14 @@ class CounterConfig:
         avgz = self.positions_array[:,2].mean()
         return np.array([avgx, avgy, avgz])
 
-
+@dataclass
+class AxisConfig:
+    '''This is the container for axis config parameters.
+    '''
+    N_POINTS: int = 500
+    N_IN_RING: int = 11
+    MIN_CHARGED_PARTICLES: float = 7.e4 #number of charged particles for a step to be considered in cherenkov calcs
+    ATM: Atmosphere = CorsikaAtmosphere()
+    # ATM: Atmosphere = USStandardAtmosphere()
+    MAX_RING_SIZE: float = 300
 

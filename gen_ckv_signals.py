@@ -18,6 +18,16 @@ class Event:
     X0: float
     Lambda: float
 
+    def __post_init__(self) -> None:
+        if self.zenith < 0.:
+            self.zenith += 2*np.pi
+        if self.zenith > 2*np.pi:
+            self.zenith -= 2*np.pi
+        if self.azimuth < 0.:
+            self.azimuth += 2*np.pi
+        if self.azimuth > 2*np.pi:
+            self.azimuth -= 2*np.pi
+
     @property
     def variable_parameters(self) -> list:
         return [self.Xmax, self.Nmax, self.X0]
@@ -75,6 +85,30 @@ class CherenkovOutput:
     photons: np.ndarray
     times: np.ndarray
     cfg: CounterConfig
+
+class GetCkv:
+    def __init__(self, cfg: CounterConfig) -> None:
+        self.cfg = cfg
+        self.sim = ch.ShowerSimulation()
+        self.tel_def = TelescopeDefinition(cfg.positions_array, cfg.radii)
+
+    def run(self, event: Event) -> tuple[np.ndarray]:
+        '''This function adds elements to the CHASM sim, runs it, and returns 
+        the photon counts and times.
+        '''
+        self.sim.add(ch.GHShower(event.Xmax, event.Nmax, event.X0, event.Lambda))
+        self.sim.add(ch.DownwardAxis(event.zenith, 
+                                event.azimuth, 
+                                event.core_altitude,
+                                event.needs_curved_atm))
+        self.sim.add(ch.SphericalCounters(self.tel_def.shift_counters(event.core_location),
+                                        self.tel_def.radii))
+        self.sim.add(ch.Yield(MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS))
+        sig = extract_signal(self.sim)
+        photons = cut_photon_zeniths(sig, self.cfg.max_photon_zenith)
+        # photons = sig.photons
+        # return photons, sig.times
+        return CherenkovOutput(photons, sig.times, self.cfg)
 
 def get_ckv(event: Event, cfg: CounterConfig) -> tuple[np.ndarray]:
     '''This function adds elements to the CHASM sim, runs it, and returns 

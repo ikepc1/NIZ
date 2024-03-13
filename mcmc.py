@@ -2,7 +2,7 @@ import numpy as np
 import emcee
 import corner
 from multiprocessing import Pool
-from copy import deepcopy
+from concurrent import futures
 
 from fit import AllSamples, make_guess, BasicParams, FitFeature, FitParam
 from tyro_fit import tyro, TyroFit
@@ -80,7 +80,7 @@ if __name__ == '__main__':
     g = make_guess(ty,pf)
     s = AllSamples(real_nfits,BasicParams,cfg)
 
-    sampler, pos, prob, state = main(s,g,niter=10000)
+    sampler, pos, prob, state = main(s,g,niter=5000)
     flat_samples = sampler.get_chain(discard=1000,flat=True)
     labels = [p.name for p in g if not p.fixed]
     fig = corner.corner(flat_samples,labels=labels)

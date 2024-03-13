@@ -126,7 +126,8 @@ class TriggerSim:
 
     def gen_electron_signal(self, incident_photons: np.ndarray, times: np.ndarray) -> np.ndarray:
         '''This method converts the incident photons to each counter to
-        electrons at each anode.
+        electrons at each anode. Note: this is not the actual number of 
+        electrons at the anode, this is the pulse shape at the anode (in units of cathode electrons).
         '''
         anode_electrons = np.empty_like(incident_photons)
         pes = self.quantum_efficiency(incident_photons)
