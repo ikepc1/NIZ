@@ -2,8 +2,8 @@ import numpy as np
 from niche_raw import NicheRaw
 from scipy.optimize import curve_fit
 from scipy.integrate import quad
-from scipy.special import seterr
-seterr(all="ignore")
+from functools import cached_property
+
 from config import COUNTER_POSITIONS_DICT, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE
 
 class NicheFit(NicheRaw):
@@ -65,6 +65,24 @@ class NicheFit(NicheRaw):
     @property
     def ns_diff(self) -> float:
         return (self.peaktime - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
+    
+    @cached_property
+    def start_rise(self) -> int:
+        level = 2 * self.baseline_error + self.baseline
+        peak = self.waveform.argmax()
+        before_reversed = self.waveform[:peak][::-1]
+        n_samples_before = (before_reversed<level).argmax()
+        istart = peak - n_samples_before - 1
+        return istart
+    
+    @cached_property
+    def end_fall(self) -> int:
+        level = 3 * self.baseline_error + self.baseline
+        peak = self.waveform.argmax()
+        after = self.waveform[peak:]
+        n_samples_after = (after<level).argmax()
+        iend = peak + n_samples_after - 1
+        return iend
 
     @staticmethod
     def tunka_fit(t,t0,pk,rt,ft,bl):

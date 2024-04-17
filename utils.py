@@ -5,11 +5,18 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
 
 from config import COUNTER_POSITIONS, RAW_DATA_PATH
 from pathlib import Path
 from niche_bin import bin_to_raw, NicheRaw
 from tyro_fit import TyroFit
+
+def write_file(filename: str, content: str) -> None:
+    file = Path(filename)
+    file.touch()
+    with file.open('w') as open_file:
+        open_file.write(content)
 
 def isolate_digits(string: str) -> str:
     '''This function removes non integer characters from a string.

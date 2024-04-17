@@ -76,6 +76,9 @@ if __name__  == '__main__':
 
     #get real data events and perform reconstruction
     print('Processing nightsky data...')
+
+    
+    
     # ns_df = init_niche_nightsky_df(cfg)
     ns_df = None
 
@@ -85,12 +88,24 @@ if __name__  == '__main__':
     #Throw shower parameters
     shower_params = gen_params_in_bins(cfg)
 
+    from gen_ckv_signals import *
+    from utils import write_file
+    evts = [Event(*row[:10]) for row in shower_params[0].gen_event_params().itertuples(index=False, name=None)]
+    for i,evt in enumerate(evts):
+        i+=1
+        if i<10:
+                name = f'DAT00000{i}.in'
+        else:
+                name = f'DAT0000{i}.in'
+        string = corsika_infile(evt,cfg,i)
+        write_file(name,string)
+
     #Simulate showers for each energy bin
-    shower_dataframes = []
-    for params in shower_params:
-        df = process_energy_bin(params, cfg)
-        fitdf, evdf, guesses = run_dataframe_recon(df,cfg)
-        shower_dataframes.append(df)
+    # shower_dataframes = []
+    # for params in shower_params:
+    #     df = process_energy_bin(params, cfg)
+    #     fitdf, evdf, guesses = run_dataframe_recon(df,cfg)
+    #     shower_dataframes.append(df)
 
     # mc_ev_lens = event_ntriggers(mc.mc[0])
     # ns_ev_lens = event_ntriggers(mc.ns)

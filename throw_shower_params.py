@@ -10,8 +10,8 @@ def gen_zeniths(N_events: int = 100) -> np.ndarray:
     '''This function draws random zenith angles from the pdf 
     2sin(theta)cos(theta).
     '''
-    return np.arcsin(np.sqrt(np.random.uniform(size = N_events)))
-    # return np.full(N_events,np.deg2rad(60))
+    return np.arcsin(np.sqrt(.5*np.random.uniform(size = N_events)))
+    # return np.full(N_events,np.deg2rad(30))
 
 def gen_azimuths(N_events: int = 100) -> np.ndarray:
     '''This function generates uniformly distributed shower azimuthal
@@ -26,7 +26,7 @@ def gen_core_pos(r: float, cfg: CounterConfig, N_events: int = 100) -> tuple[np.
     rs = r * np.sqrt(np.random.uniform(size = N_events))
     phis = gen_azimuths(N_events) #random phis
     zs = np.zeros_like(phis)
-    return np.vstack((rs * np.cos(phis), rs * np.sin(phis), zs)).T + cfg.counter_center
+    return np.vstack((rs * np.cos(phis), rs * np.sin(phis), zs)).T + cfg.counter_bottom
 
 def Nmax(E: float | np.ndarray) -> float:
     '''This function calculates a shower's Nmax based on its energy.
@@ -120,11 +120,13 @@ class MCParams:
         '''
         Es = self.draw_Es()
         cores = gen_core_pos(self.radius, self.cfg, N_events=self.N_events)
+        zeniths = gen_zeniths(self.N_events)
+        # zeniths[zeniths>np.deg2rad(45.)] = np.deg2rad(45.)
         params_dict = {
                 'E': Es,
                 'xmax': Xmax_of_lE(np.log10(Es)),     
                 'nmax': Nmax(Es),
-                'zenith': gen_zeniths(self.N_events),
+                'zenith': zeniths,
                 'azimuth': gen_azimuths(self.N_events),
                 # 'corex': cores[:,0],
                 # 'corey': cores[:,1],

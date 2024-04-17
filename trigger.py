@@ -7,7 +7,7 @@ from tunka_fit import TunkaPMTPulse
 from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
 from noise import random_noise, read_noise_file
-from config import CounterConfig, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
+from config import CounterConfig, photon_time_bins, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
 from utils import date2bytes
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:
@@ -39,13 +39,6 @@ def bin_medians(bins: np.ndarray) -> np.ndarray:
     '''This method returns the middle of all the time bins
     '''
     return bins[:-1]+(bins[1:]-bins[:-1])/2
-
-def photon_time_bins() -> np.ndarray:
-    '''This method returns the full array of photon time bins of size
-    PHOTONS_TIMEBIN_SIZE used for the signal in each counter
-    '''
-    width = (PHOTONS_TIMEBIN_SIZE * PHOTONS_WINDOW_SIZE) / 2
-    return np.arange(-width, width + PHOTONS_TIMEBIN_SIZE , PHOTONS_TIMEBIN_SIZE)
 
 def bin_photons(photons: np.ndarray, original_times: np.ndarray) -> np.ndarray:
     '''This method calculates the histogram of the photon counts in the original

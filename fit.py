@@ -640,8 +640,10 @@ class TimesWidthsAreas(FitFeature):
         return np.hstack((peaktimes,pulse_widths,pa_array/pa_array.sum()))
 
 class AllSamples(FitFeature):
-    wf_start = TRIGGER_POSITION - 10
-    wf_end = TRIGGER_POSITION + 10
+    wf_cushion = 7
+    wf_start = TRIGGER_POSITION - wf_cushion
+    wf_end = TRIGGER_POSITION + wf_cushion
+
     @cached_property
     def biggest_trig2peak_diff(self) -> float:
         return (self.nfit_dict[self.biggest_counter].waveform.argmax() - TRIGGER_POSITION) * NICHE_TIMEBIN_SIZE
@@ -665,38 +667,46 @@ class AllSamples(FitFeature):
         return times
 
     @cached_property
-    def real_times_array(self) -> np.ndarray:
+    def real_times_array(self) -> list[np.ndarray]:
         ''''''
-        return np.array([self.get_real_times(f)[self.wf_start:self.wf_end] for f in self.nfits])
+        return [self.get_real_times(f)[f.start_rise:f.end_fall] for f in self.nfits]
 
     @cached_property
     def real_inputs(self) -> np.ndarray:
-        return self.real_times_array.flatten()
+        # return self.real_times_array.flatten()
+        return np.hstack(self.real_times_array)
         # return np.arange(len(self.real_times_array.flatten()))
     
     @cached_property
     def real_values(self) -> np.ndarray:
-        return np.array([(f.waveform - f.baseline)[self.wf_start:self.wf_end] for f in self.nfits]).flatten()
+        return np.hstack([(f.waveform - f.baseline)[f.start_rise:f.end_fall] for f in self.nfits])
+    
+    def calc_sample_errors(self, f: NicheFit) -> np.ndarray:
+        wf = (f.waveform - f.baseline)[f.start_rise:f.end_fall]
+        wf[wf<0.] = 0.
+        sqrtn_error = np.sqrt(wf) 
+        return np.sqrt(sqrtn_error**2 + f.baseline_error**2)
     
     @cached_property
     def error(self) -> np.ndarray:
-        return np.array([np.full(self.wf_end-self.wf_start,f.baseline_error) for f in self.nfits]).flatten()
+        # return np.hstack([self.calc_sample_errors(f) for f in self.nfits])
+        return np.hstack([np.full(f.end_fall-f.start_rise,f.baseline_error) for f in self.nfits])
     
     @staticmethod
     def trace_at_times(sim_wf: np.ndarray, sim_times: np.ndarray, real_trace_times: np.ndarray) -> np.ndarray:
         return sim_wf[np.searchsorted(sim_times,real_trace_times, side='left')]
         # return np.interp(real_trace_times,sim_times,sim_wf, left=0., right=0.)
 
-    @staticmethod
-    def wf_baseline_parabola(wf: np.ndarray, tol:float=1.e-6) -> np.ndarray:
-        wf_start = np.argmax(wf[wf<1.e-6])
-        wf_rev = wf[::-1]
-        wf_end = np.argmax(wf_rev[wf_rev<1.e-6])
-        if wf_end == 0 or wf_start == 0:
-            return wf
-        wf[:wf_start] -= np.arange(wf_start)[::-1]**2
-        wf[-wf_end:] -= np.arange(wf_end)**2
-        return wf
+    # @staticmethod
+    # def wf_baseline_parabola(wf: np.ndarray, tol:float=1.e-6) -> np.ndarray:
+    #     wf_start = np.argmax(wf[wf<1.e-6])
+    #     wf_rev = wf[::-1]
+    #     wf_end = np.argmax(wf_rev[wf_rev<1.e-6])
+    #     if wf_end == 0 or wf_start == 0:
+    #         return wf
+    #     wf[:wf_start] -= np.arange(wf_start)[::-1]**2
+    #     wf[-wf_end:] -= np.arange(wf_end)**2
+    #     return wf
 
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
@@ -704,9 +714,9 @@ class AllSamples(FitFeature):
         # sigdict, times = ckv_signal_dict(ckv)
         # parabase_sigdict = {name:self.wf_baseline_parabola(sigdict[name]) for name in sigdict}
         # times -= times[sigdict[self.biggest_counter].argmax()]
-        wfs_at_real_times = np.array([self.trace_at_times(sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)])
+        wfs_at_real_times = [self.trace_at_times(sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)]
         # wfs_at_real_times[wfs_at_real_times<0.] = 0.
-        return wfs_at_real_times.flatten()
+        return np.hstack(wfs_at_real_times)
     
 class Samples(FitFeature):
     @cached_property
@@ -749,10 +759,10 @@ class FitParam:
 def make_guess(ty: TyroFit, pf: NichePlane, cfg: CounterConfig) -> list[FitParam]:
     '''This function makes a guess for the fit parameters.
     '''
-    corez = cfg.counter_center[2]
+    corez = cfg.counter_bottom[2]
     parlist = [
         FitParam('xmax', 500., (400., 800.), 50.),
-        FitParam('nmax', 1.e5, (1.e4, 1.e8), 1.e5),
+        FitParam('nmax', 1.e6, (1.e4, 1.e8), 1.e5),
         FitParam('zenith', pf.theta, (0., pf.theta +.1), np.deg2rad(1.)),
         FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.)),
         FitParam('corex',ty.core_estimate[0],ty.xlimits, 5.),
@@ -761,8 +771,8 @@ def make_guess(ty: TyroFit, pf: NichePlane, cfg: CounterConfig) -> list[FitParam
         # FitParam('corez',-25.7,(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
         FitParam('corez',corez,(corez,corez), 1., fixed=True),
         FitParam('x0',0.,(0,0),1, fixed=True),
-        FitParam('lambda',70., (70.,70.),1, fixed=True),
-        FitParam('t_offset', 0., (-1.5e2, 1.5e2), 10.,fixed=False)
+        FitParam('lambda',70., (60.,80.),1, fixed=True),
+        FitParam('t_offset', 0., (-4.5e2, 4.5e2), 10.,fixed=False)
     ]
     return parlist
 
@@ -900,7 +910,7 @@ class FitProcedure:
     def __init__(self, cfg: CounterConfig) -> None:
         self.cfg = cfg
 
-    def fit_procedure(self, tpf: tuple[TyroFit,NichePlane]) -> Minuit:
+    def fit_procedure(self, tpf: tuple[TyroFit,NichePlane]) -> list[FitParam]:
         '''This function is the full procedure for fitting a NICHE event.
         '''
         ty,pf = tpf
@@ -931,10 +941,15 @@ class FitProcedure:
         m.simplex()
 
         guess = update_guess(m)
-        at = AllSamples(pf.counters, BasicParams, self.cfg)
+        at = AllTunka(pf.counters, BasicParams, self.cfg)
         at.target_parameters = ['t_offset']
         m = init_minuit(at, guess)
         m.migrad()
+
+        guess = update_guess(m)
+        at = AllSamples(pf.counters, BasicParams, self.cfg)
+        at.target_parameters = ['t_offset']
+        m = init_minuit(at, guess)
 
         m.tol=.1
         m.fixed = True
@@ -953,24 +968,44 @@ class FitProcedure:
 if __name__ == '__main__':
     # from datafiles import *
     import matplotlib.pyplot as plt
+    from pathlib import Path
+    import CHASM as ch
+
     plt.ion()
     from utils import plot_event, plot_generator, get_data_files, preceding_noise_file
     data_date_and_time = '20190504034237'
     data_files = get_data_files(data_date_and_time)
     noise_files = [preceding_noise_file(f) for f in data_files]
     cfg = CounterConfig(data_files, noise_files)
-    
-    pars = [500.,2.e6,np.deg2rad(40.),np.deg2rad(315.), 450., -660.,-25.7,0,70]
-    ev = BasicParams.get_event(pars)
     pe = ProcessEvents(cfg, frozen_noise=False)
-    real_nfits = pe.gen_nfits_from_event(ev)
-    pf = NichePlane(real_nfits)
-    ty = tyro(real_nfits)
-    mp = FWHM(real_nfits,BasicParams,cfg)
-    print(mp.real_values)
-    pars.append(80.)
-    print(mp.get_output(pars))
+    
+    corsika_directory = Path('he_corsika')
+    corsika_files = [p for p in corsika_directory.iterdir() if p.name.endswith('.dat')]
+    corsika_triggers = [pe.gen_nfits_from_ei(p) for p in corsika_files]
+    eventios = [ch.EventioWrapper(f) for f in corsika_files]
+    corsika_nmaxs = np.array([ei.nch.max() for ei in eventios])
+    corsika_xmaxs = np.array([ei.X[ei.nch.argmax()] for ei in eventios])
 
+    fp = FitProcedure(cfg)
+
+    fits = []
+    for corsika_nfits in corsika_triggers:
+        pf = NichePlane(corsika_nfits)
+        ty = tyro(corsika_nfits)
+        fits.append(fp.fit_procedure((ty,pf)))
+
+    fit_xmaxs = np.array([f[0].value for f in fits])
+    fit_nmaxs = np.array([f[1].value for f in fits])
+
+    xmax_diffs = corsika_xmaxs - fit_xmaxs
+    plt.figure()
+    plt.hist(xmax_diffs, bins=30)
+    plt.xlabel('thrown - fit (g/cm^2)')
+
+    nmax_diffs = np.log10(corsika_nmaxs) - np.log10(fit_nmaxs)
+    plt.figure()
+    plt.hist(nmax_diffs, bins=30)
+    plt.xlabel('log10(thrown) - log10(fit) (log10(eV))')
     # s = AllSamples(real_nfits,BasicParams,cfg)
     # plt.figure()
     # plt.plot(s.real_values)

@@ -21,11 +21,11 @@ TRIGGER_POSITION = 524
 
 #MC Parameters
 N_ENERGY_BINS = 1
-MIN_LE = 15.
-MAX_LE = 15.2
+MIN_LE = 16.
+MAX_LE = 17.
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
-N_THROWN = 8*20
+N_THROWN = 64
 THROW_RADIUS = 0. #meters per 10^12
 
 #CHASM inputs
@@ -142,35 +142,43 @@ COUNTER_PMT_DELAY = {'curie':    40., # in ns
                     'rossi':     40.,
                     'rubin':     40.}
 
-# COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
-#                         'dirac':     1.,
-#                         'einstein':  1.,
-#                         'feynman':   1.,
-#                         'meitner':   1.,
-#                         'newton':    1.,
-#                         'noether':   1.,
-#                         'rutherford':1.,
-#                         'wu':        1.,
-#                         'yukawa':    1.,
-#                         'bardeen':   1.,
-#                         'bell':      1.,
-#                         'rossi':     1.,
-#                         'rubin':     1.}
+COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
+                        'dirac':     1.,
+                        'einstein':  1.,
+                        'feynman':   1.,
+                        'meitner':   1.,
+                        'newton':    1.,
+                        'noether':   1.,
+                        'rutherford':1.,
+                        'wu':        1.,
+                        'yukawa':    1.,
+                        'bardeen':   1.,
+                        'bell':      1.,
+                        'rossi':     1.,
+                        'rubin':     1.}
 
-COUNTER_FADC_PER_PE =  {'curie':     10., # number of fadc counts per PE
-                        'dirac':     10.,
-                        'einstein':  10.,
-                        'feynman':   10.,
-                        'meitner':   10.,
-                        'newton':    10.,
-                        'noether':   10.,
-                        'rutherford':10.,
-                        'wu':        10.,
-                        'yukawa':    10.,
-                        'bardeen':   10.,
-                        'bell':      10.,
-                        'rossi':     10.,
-                        'rubin':     10.}
+# COUNTER_FADC_PER_PE =  {'curie':     2., # number of fadc counts per PE
+#                         'dirac':     2.,
+#                         'einstein':  2.,
+#                         'feynman':   2.,
+#                         'meitner':   2.,
+#                         'newton':    2.,
+#                         'noether':   2.,
+#                         'rutherford':2.,
+#                         'wu':        2.,
+#                         'yukawa':    2.,
+#                         'bardeen':   2.,
+#                         'bell':      2.,
+#                         'rossi':     2.,
+#                         'rubin':     2.}
+
+def photon_time_bins() -> np.ndarray:
+    '''This method returns the full array of photon time bins of size
+    PHOTONS_TIMEBIN_SIZE used for the signal in each counter
+    '''
+    width = (PHOTONS_TIMEBIN_SIZE * PHOTONS_WINDOW_SIZE) / 2
+    return np.arange(-width, width + PHOTONS_TIMEBIN_SIZE , PHOTONS_TIMEBIN_SIZE)
+
 @dataclass
 class CounterConfig:
     '''This is the container for all the constants related to particular counters for
@@ -188,7 +196,7 @@ class CounterConfig:
         self.pmt_gain = self.dict_comp(COUNTER_PMT_DELAY)
         self.pmt_delay = self.dict_comp(COUNTER_PMT_DELAY)
         self.fadc_per_pe = self.dict_comp(COUNTER_FADC_PER_PE)
-        self.radii = np.full((self.positions_array.shape[0]), .1)
+        self.radii = np.full((self.positions_array.shape[0]), .0508)
 
     def dict_comp(self, og_dict: dict) -> dict:
         '''This method wraps a dictionary comprehension on the keys.
@@ -202,6 +210,15 @@ class CounterConfig:
         avgx = self.positions_array[:,0].mean()
         avgy = self.positions_array[:,1].mean()
         avgz = self.positions_array[:,2].mean()
+        return np.array([avgx, avgy, avgz])
+    
+    @property
+    def counter_bottom(self) -> np.ndarray:
+        '''This is the centroid of the active counter's positions.
+        '''
+        avgx = self.positions_array[:,0].mean()
+        avgy = self.positions_array[:,1].mean()
+        avgz = self.positions_array[:,2].min()
         return np.array([avgx, avgy, avgz])
 
 @dataclass
