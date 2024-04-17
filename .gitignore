@@ -6,5 +6,4 @@
 *.log
 *.bin
 *.in
-/*
 __pycache__
