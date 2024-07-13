@@ -1,7 +1,10 @@
 from niche_raw import NicheRaw
+from read_flasher_logs import ampl_at_time
+from utils import read_niche_file
 
 from functools import cached_property
 import numpy as np
+from pathlib import Path
 
 class CalibPulse(NicheRaw):
     '''This class is the container for the square calibration pulses.
@@ -19,23 +22,53 @@ class CalibPulse(NicheRaw):
         _,bins = np.histogram(self.waveform)
         return bins[-3]
 
+    # @cached_property
+    # def start_rise(self) -> int:
+    #     peak = self.waveform.argmax()
+    #     before_reversed = self.waveform[:peak][::-1]
+    #     under_level = (before_reversed<self.min_pulse_level)
+    #     if not under_level.any():
+    #         return 0
+    #     n_samples_before = under_level.argmax()
+    #     istart = peak - n_samples_before + 2
+    #     return istart
+    
+    # @cached_property
+    # def end_fall(self) -> int:
+    #     peak = self.waveform.argmax()
+    #     after = self.waveform[peak:]
+    #     n_samples_after = (after<self.min_pulse_level).argmax()
+    #     iend = peak + n_samples_after - 2
+    #     return iend
+    
     @cached_property
     def start_rise(self) -> int:
-        peak = self.waveform.argmax()
-        before_reversed = self.waveform[:peak][::-1]
-        n_samples_before = (before_reversed<self.min_pulse_level).argmax()
-        istart = peak - n_samples_before + 1
-        return istart
-    
+        return 524 + 10
+
     @cached_property
     def end_fall(self) -> int:
-        peak = self.waveform.argmax()
-        after = self.waveform[peak:]
-        n_samples_after = (after<self.min_pulse_level).argmax()
-        iend = peak + n_samples_after - 1
-        return iend
-    
+        return 610
+
     @cached_property
     def pulse(self) -> np.ndarray:
         return self.waveform[self.start_rise:self.end_fall] - self.baseline
+
+    @cached_property
+    def pulse_mean(self) -> float:
+        if len(self.pulse) == 0:
+            return 0.
+        else:
+            return self.pulse.mean()
+        
+    @cached_property
+    def flash_ampl(self) -> float:
+        return ampl_at_time(self.trigtime())
+
+def read_calib_files(counter: str) -> list[CalibPulse]:
+    calib_directory = Path('calib') / counter
+    nraws = []
+    for file in calib_directory.iterdir():
+        if file.name.endswith('.bin'):
+            nraws.extend(read_niche_file(file))
+    return nraws
 

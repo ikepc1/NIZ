@@ -16,11 +16,11 @@ class TunkaPMTPulse:
 
     @property
     def ll(self):
-        return self.t0 - 10.
+        return self.t0 - 100.
 
     @property
     def ul(self):
-        return self.t0 + 10.
+        return self.t0 + 100.
 
     def tunka_fit(self, t: np.ndarray) -> np.ndarray:
         """

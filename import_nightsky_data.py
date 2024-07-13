@@ -4,8 +4,10 @@ import numpy as np
 
 from niche_raw import NicheRaw
 from niche_fit import NicheFit
-from utils import run_multiprocessing, read_niche_file
-from config import CounterConfig
+from niche_plane import NichePlane
+from tyro_fit import tyro
+from utils import run_multiprocessing, save_df, read_niche_file, get_data_files, preceding_noise_file
+from config import CounterConfig, RAW_DATA_PATH, NIGHTSKY_DF_PATH
 
 def make_nfit(nraw: NicheRaw) -> NicheFit:
     return NicheFit(nraw)
@@ -16,6 +18,7 @@ def get_events_from_datafile(file: Path) -> list[NicheFit]:
     nraws = read_niche_file(file)
     nfits = run_multiprocessing(NicheFit, nraws)
     return nfits
+    # return nraws
 
 def get_events(cfg: CounterConfig) -> dict[str, list[NicheRaw]]:
     '''This function creates a dictionary of nraw objects for all the events
@@ -23,7 +26,7 @@ def get_events(cfg: CounterConfig) -> dict[str, list[NicheRaw]]:
     '''
     event_dict = {}
     for data_file in cfg.data_files:
-        print(f'Getting pulse fits for {data_file.parent.name}')
+        # print(f'Getting pulse fits for {data_file.parent.name}')
         event_dict[data_file.parent.name] = get_events_from_datafile(data_file)
     return event_dict
 
@@ -36,7 +39,7 @@ def nraw_list(events_dict: dict[str, list[NicheRaw]]) -> list[NicheRaw]:
         nraws.extend(events_dict[counter_name])
     return nraws
 
-def match_times(events_dict: dict[str, list[NicheRaw]], ns_time_interval: int = 1000) -> list[np.ndarray]:
+def match_times(events_dict: dict[str, list[NicheRaw]], multiplicity: int = 5, ns_time_interval: int = 1000) -> list[np.ndarray]:
     '''This function takes the dictionary of all triggers for a night, and returns a 
     list of dictionaries where each entry is a time match.
     '''
@@ -51,12 +54,21 @@ def match_times(events_dict: dict[str, list[NicheRaw]], ns_time_interval: int = 
     ts_array = np.array([nraw.trigtime() for nraw in nraws])
 
     #find events whose timestamps are within max_timedelta of each other
-    matches = []
+    ids = np.arange(len(nraws))
+    # matches = []
+    match_ids = []
     for ts in ts_array:
         timedelta_array = np.abs(ts - ts_array)
-        matches.append(nraw_array[timedelta_array < max_timedelta])
+        mask = timedelta_array < max_timedelta
+        # m = nraw_array[mask]
+        id = ids[mask]
+        if len(id) >= multiplicity:
+            # matches.append(m)
+            match_ids.append(tuple(id))
 
     #remove duplicates
+    id_set = list(set(match_ids))
+    matches = [nraw_array[np.array(i)] for i in id_set]
     return matches
 
 def empty_row(cfg: CounterConfig) -> dict:
@@ -74,7 +86,8 @@ def empty_row(cfg: CounterConfig) -> dict:
             'X0',
             'Lambda',
             'Fit',
-            'Plane Fit']
+            'Plane_Fit',]
+    row['config'] = cfg
     for counter in cfg.active_counters:
         cols.append(counter)
     for col in cols:
@@ -91,7 +104,36 @@ def init_niche_nightsky_df(cfg: CounterConfig) -> pd.DataFrame:
         row = empty_row(cfg)
         for nraw in match:
             row[nraw.name] = nraw
-        # if len(match) > 0:
-        #     row['Plane Fit'] = NichePlane(list(match))
+            row['Fit'] = tyro(list(match))
+            row['Plane_Fit'] = NichePlane(list(match))
         rows.append(row)
     return pd.DataFrame(rows)
+
+def process_night(night: Path) -> list[pd.DataFrame]:
+    '''This function takes a NICHE night directory and time matches the events,
+    appending them to a dataframe.
+    '''
+    alldata = get_data_files(night.name)
+    allnsdata = [file for file in alldata if (file.name.endswith('.bin') and file.name[-5].isnumeric())]
+    data_times = list(set([file.name[:-4] for file in allnsdata]))
+    df_list = []
+    for time in data_times:
+        ns_data_part = [file for file in allnsdata if file.name[:-4] == time]
+        noise_files = [preceding_noise_file(file) for file in ns_data_part]
+        cfg = CounterConfig(ns_data_part, noise_files)
+        df = init_niche_nightsky_df(cfg)
+        if not df.empty:
+            save_df(df,time + '.pkl',NIGHTSKY_DF_PATH)
+            df_list.append(df)
+    return df_list
+
+if __name__ == '__main__':
+    path = Path(RAW_DATA_PATH)
+    nights = [p for p in path.iterdir() if int(p.name[:4]) >= 2020]
+    event_ncounters = []
+    for nightpath in nights:
+        print(nightpath.name)
+        l = process_night(nightpath)
+        if l:
+            for df in l:
+                event_ncounters.extend([len(row[1][row[1].notna()]) for row in df.iterrows()])

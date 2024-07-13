@@ -6,7 +6,9 @@ from atmosphere import CorsikaAtmosphere, Atmosphere
 
 '''constants'''
 #paths
-RAW_DATA_PATH = '/home/isaac/niche_data/'
+RAW_DATA_PATH = Path('/home/isaac/niche_data/')
+NIZ_DIRECTORY = Path('/home/isaac/NIZ/')
+NIGHTSKY_DF_PATH = NIZ_DIRECTORY / 'nightsky_dfs/'
 
 #niche array params
 CXF_ALTITUDE = 1500.

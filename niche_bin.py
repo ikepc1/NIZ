@@ -12,6 +12,8 @@ def bin_to_raw(bb,name,retfit=False):
     """Return a list of niche_raw (and niche_fit) objects from
     a byte buffer bb"""
     nbb = len(bb)
+    if nbb == 0:
+        return []
     pos = 0
     dataFormat = st.unpack('i',bb[pos:pos+4])[0]
     pos += 4

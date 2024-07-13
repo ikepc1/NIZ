@@ -131,9 +131,6 @@ def add_glitches(real_fadc_array: np.ndarray, sim_fadc_array: np.ndarray, cut_pr
         sim_with_glitches[up_for_change_mask] = up_for_change
         return sim_with_glitches
 
-
-
-
 def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> np.ndarray:
     '''This function is the procedure for generating a simulated noise trace 
     for a given noise file.

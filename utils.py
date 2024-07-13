@@ -7,7 +7,7 @@ import numpy as np
 from datetime import datetime
 import os
 
-from config import COUNTER_POSITIONS, RAW_DATA_PATH
+from config import COUNTER_POSITIONS, RAW_DATA_PATH, NIZ_DIRECTORY, CounterConfig
 from pathlib import Path
 from niche_bin import bin_to_raw, NicheRaw
 from tyro_fit import TyroFit
@@ -56,7 +56,7 @@ def date2bytes() -> bytearray:
     now = datetime.now()
     return bytearray(now.strftime("%Y%m%d%H%M%S"), 'utf-8')
 
-def get_data_files(timestr: str) -> list[str]:
+def get_data_files(timestr: str) -> list[Path]:
     '''This function finds the corresponding data parts for each
     counter at a given time. The second wildcard in the glob makes
     this work for either noise or nightsky files.
@@ -82,6 +82,22 @@ def run_multiprocessing(func: Callable[[object],object], inputs: list[object], c
                 results.append(result)
                 bar()
     return results
+
+def save_df(df: pd.DataFrame, filename: str, dir: Path = NIZ_DIRECTORY) -> None:
+    '''This function saves a dataframe with a name extracted from the config
+    column in that df.
+    '''
+    df.to_pickle(dir / filename)
+
+def init_config(ts: str) -> CounterConfig:
+    '''This function generates a config object for a data part with a given timestamp.
+    '''
+    alldata = get_data_files(ts)
+    allnsdata = [file for file in alldata if (file.name.endswith('.bin') and file.name[-5].isnumeric())]
+    ns_data_part = [file for file in allnsdata if file.name[:-4] == ts]
+    noise_files = [preceding_noise_file(file) for file in ns_data_part]
+    cfg = CounterConfig(ns_data_part, noise_files)
+    return cfg
 
 def plot_detectors() -> None:
     '''This function adds the NICHE counters to a plot.
@@ -120,13 +136,13 @@ def plot_generator(event_dataframe: pd.DataFrame) -> None:
     for i, row in event_dataframe[event_dataframe['Fit'].notna()].iterrows():
         init_niche_plot()
         plot_triggers(row['Fit'])
-        plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['Plane Fit'].theta):.2f}")
+        plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['Plane_Fit'].theta):.2f}")
         # plt.suptitle(f"Event index = {i}, E = {row['E']:.1e} eV, zenith =  {np.rad2deg(row['zenith']):.2f}")
         plt.scatter(row['corex'], row['corey'], c='r', label='core')
         axis_x = -np.cos(row['zenith']) * np.cos(row['azimuth'])
         axis_y = -np.cos(row['zenith']) * np.sin(row['azimuth'])
         plt.quiver(row['corex'], row['corey'], axis_x, axis_y,color = 'k' ,label='thrown axis',scale_units='xy', scale=.01)
-        plt.quiver(row['corex'], row['corey'], -row['Plane Fit'].nx, -row['Plane Fit'].ny, color='g', label = 'plane fit',scale_units='xy', scale=.01)
+        plt.quiver(row['corex'], row['corey'], -row['Plane_Fit'].nx, -row['Plane_Fit'].ny, color='g', label = 'plane fit',scale_units='xy', scale=.01)
         plt.legend()
         plt.xlim(COUNTER_POSITIONS[:,0].min() - 100., COUNTER_POSITIONS[:,0].max() + 100.)
         plt.ylim(COUNTER_POSITIONS[:,1].min() - 100., COUNTER_POSITIONS[:,1].max() + 100.)

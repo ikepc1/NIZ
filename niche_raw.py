@@ -108,6 +108,9 @@ class NicheRaw:
         S = self.__str__()[14:16]
         ns = self.counter * 5
         if (y+m+d+H+M+S+str(ns)).isnumeric():
-            return np.datetime64(y+'-'+m+'-'+d+' '+H+':'+M+':'+S) + np.timedelta64(ns, 'ns')
+            try:
+                return np.datetime64(y+'-'+m+'-'+d+' '+H+':'+M+':'+S) + np.timedelta64(ns, 'ns')
+            except:
+                return np.datetime64()
         else:
             return np.datetime64()

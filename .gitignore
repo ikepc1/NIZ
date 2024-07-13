@@ -6,4 +6,12 @@
 *.log
 *.bin
 *.in
+*.dat
+*.trtax4
+*.dbase
+*.long
+*.gz
+*checkpoint.ipynb
+*.txt
+*.npz
 __pycache__
