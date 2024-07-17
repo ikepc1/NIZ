@@ -1,4 +1,5 @@
 from typing import Callable
+from scipy.signal import argrelmin
 from multiprocessing import Pool, cpu_count
 from alive_progress import alive_bar
 import matplotlib.pyplot as plt
@@ -7,7 +8,7 @@ import numpy as np
 from datetime import datetime
 import os
 
-from config import COUNTER_POSITIONS, RAW_DATA_PATH, NIZ_DIRECTORY, CounterConfig
+from config import COUNTER_POSITIONS, RAW_DATA_PATH, NIZ_DIRECTORY
 from pathlib import Path
 from niche_bin import bin_to_raw, NicheRaw
 from tyro_fit import TyroFit
@@ -29,15 +30,21 @@ def datetime_from_filename(file: Path) -> datetime:
     '''
     return datetime.strptime(isolate_digits(file.name), '%Y%m%d%H%M%S')
 
-def preceding_noise_file(datafile: Path) -> Path:
+def preceding_noise_files(datafile: Path) -> tuple[Path]:
     '''This function finds the noise file immediately preceding the input data
     file.
     '''
     data_time = datetime_from_filename(datafile)
-    noise_files = [file for file in datafile.parent.glob('*.bg.bin')]
+    noise_files = np.array([file for file in datafile.parent.glob('*.bg.bin')], dtype = 'O')
     noise_times = np.array([datetime_from_filename(file) for file in noise_files]).astype(datetime)
-    deltas = data_time - noise_times
-    return noise_files[np.abs(deltas).argmin()]
+    deltas = np.abs(data_time - noise_times)
+    #shutter open immediately precedes data
+    shutter_open_file = noise_files[deltas.argmin()]
+    #shutter closed precedes shutter open
+    without_open = noise_files[noise_files != shutter_open_file]
+    deltas_without_open = deltas[noise_files != shutter_open_file]
+    shutter_closed_file = without_open[deltas_without_open.argmin()]
+    return shutter_closed_file, shutter_open_file
 
 def get_file_ts(file: Path) -> np.datetime64:
     '''This function gets the timestamp from the filename.
@@ -71,6 +78,11 @@ def read_niche_file(filepath: Path) -> list[NicheRaw]:
         nraw_list = list(set(bin_to_raw(open_file.read(), filepath.parent.name, retfit=False)))
     return nraw_list
 
+def read_noise_file(filepath: Path) -> np.ndarray:
+    '''This function reads a noise file and returns a numoy array of the traces.
+    '''
+    return np.vstack([nraw.waveform for nraw in read_niche_file(filepath)])
+
 def run_multiprocessing(func: Callable[[object],object], inputs: list[object], chunksize = 250) -> list[object]:
     '''This function maps a function to imap with the use of context managers
     and a progress bar.
@@ -88,16 +100,6 @@ def save_df(df: pd.DataFrame, filename: str, dir: Path = NIZ_DIRECTORY) -> None:
     column in that df.
     '''
     df.to_pickle(dir / filename)
-
-def init_config(ts: str) -> CounterConfig:
-    '''This function generates a config object for a data part with a given timestamp.
-    '''
-    alldata = get_data_files(ts)
-    allnsdata = [file for file in alldata if (file.name.endswith('.bin') and file.name[-5].isnumeric())]
-    ns_data_part = [file for file in allnsdata if file.name[:-4] == ts]
-    noise_files = [preceding_noise_file(file) for file in ns_data_part]
-    cfg = CounterConfig(ns_data_part, noise_files)
-    return cfg
 
 def plot_detectors() -> None:
     '''This function adds the NICHE counters to a plot.
@@ -147,3 +149,7 @@ def plot_generator(event_dataframe: pd.DataFrame) -> None:
         plt.xlim(COUNTER_POSITIONS[:,0].min() - 100., COUNTER_POSITIONS[:,0].max() + 100.)
         plt.ylim(COUNTER_POSITIONS[:,1].min() - 100., COUNTER_POSITIONS[:,1].max() + 100.)
         yield
+
+if __name__ == '__main__':
+    datafile = Path('/home/isaac/niche_data/20231214/bardeen/20231214014805.bin')
+    noise_files = preceding_noise_files(datafile)

@@ -4,12 +4,7 @@ from pathlib import Path
 from scipy.signal import argrelextrema
 
 from config import NICHE_TIMEBIN_SIZE, WAVEFORM_SIZE
-from utils import read_niche_file
-
-def read_noise_file(filepath: Path) -> np.ndarray:
-    '''This function reads a noise file and returns a numoy array of the traces.
-    '''
-    return np.vstack([nraw.waveform for nraw in read_niche_file(filepath)])
+from utils import read_noise_file
 
 def noise_fft(noise_array: np.ndarray) -> np.ndarray:
     '''This function returns the Fourier transform of an array of noise data

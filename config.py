@@ -182,48 +182,6 @@ def photon_time_bins() -> np.ndarray:
     return np.arange(-width, width + PHOTONS_TIMEBIN_SIZE , PHOTONS_TIMEBIN_SIZE)
 
 @dataclass
-class CounterConfig:
-    '''This is the container for all the constants related to particular counters for
-    a particular mc run.
-    '''
-    data_files: list[Path]
-    noise_files: list[Path]
-    max_photon_zenith: float = np.deg2rad(45)
-
-    def __post_init__(self) -> None:
-        self.active_counters = [f.parent.name for f in self.data_files]
-        self.positions = self.dict_comp(COUNTER_POSITIONS_DICT)
-        self.positions_array = np.array(list(self.positions.values()))
-        self.quantum_efficiency = self.dict_comp(COUNTER_QE)
-        self.pmt_gain = self.dict_comp(COUNTER_PMT_DELAY)
-        self.pmt_delay = self.dict_comp(COUNTER_PMT_DELAY)
-        self.fadc_per_pe = self.dict_comp(COUNTER_FADC_PER_PE)
-        self.radii = np.full((self.positions_array.shape[0]), .0508)
-
-    def dict_comp(self, og_dict: dict) -> dict:
-        '''This method wraps a dictionary comprehension on the keys.
-        '''
-        return {name:og_dict[name] for name in self.active_counters}
-    
-    @property
-    def counter_center(self) -> np.ndarray:
-        '''This is the centroid of the active counter's positions.
-        '''
-        avgx = self.positions_array[:,0].mean()
-        avgy = self.positions_array[:,1].mean()
-        avgz = self.positions_array[:,2].mean()
-        return np.array([avgx, avgy, avgz])
-    
-    @property
-    def counter_bottom(self) -> np.ndarray:
-        '''This is the centroid of the active counter's positions.
-        '''
-        avgx = self.positions_array[:,0].mean()
-        avgy = self.positions_array[:,1].mean()
-        avgz = self.positions_array[:,2].min()
-        return np.array([avgx, avgy, avgz])
-
-@dataclass
 class AxisConfig:
     '''This is the container for axis config parameters.
     '''

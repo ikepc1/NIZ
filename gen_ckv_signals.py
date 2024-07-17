@@ -2,7 +2,8 @@ import CHASM as ch
 import numpy as np
 from dataclasses import dataclass
 
-from config import photon_time_bins, CXF_ALTITUDE, MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS, CHASM_MESH, CounterConfig
+from config import photon_time_bins, CXF_ALTITUDE, MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS, CHASM_MESH
+from counter_config import CounterConfig
 
 @dataclass
 class Event:

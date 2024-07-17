@@ -5,7 +5,8 @@ import numpy as np
 
 from trigger import NicheTriggers, gen_niche_trigger, generate_background, generate_zeros, get_thresholds
 from gen_ckv_signals import get_ckv, Event, read_in_corsika
-from config import CounterConfig, TRIGGER_WIDTH
+from config import TRIGGER_WIDTH
+from counter_config import CounterConfig
 from niche_fit import NicheFit
 
 class ProcessEvents:
@@ -17,24 +18,24 @@ class ProcessEvents:
         self.frozen_noise = frozen_noise
         self.zero_noise = zero_noise
         if frozen_noise:
-            self.noise = generate_background(self.cfg.noise_files)
+            self.noise = generate_background(self.cfg.noise_open_files)
         elif zero_noise:
-            self.noise = generate_zeros(self.cfg.noise_files)
-            self.thresholds = get_thresholds(self.cfg.noise_files)
+            self.noise = generate_zeros(self.cfg.noise_open_files)
+            self.thresholds = get_thresholds(self.cfg.noise_open_files)
 
     def process_event(self, evt: Event) -> NicheTriggers:
         '''This function takes an event, generates a cherenkov signal'''
         if self.frozen_noise or self.zero_noise:
             return gen_niche_trigger(get_ckv(evt, self.cfg), self.noise)
         else:
-            return gen_niche_trigger(get_ckv(evt, self.cfg), generate_background(self.cfg.noise_files))
+            return gen_niche_trigger(get_ckv(evt, self.cfg), generate_background(self.cfg.noise_open_files))
     
     def process_ei_event(self, file: str) -> NicheTriggers:
         '''This function takes an event, generates a cherenkov signal'''
         if self.frozen_noise or self.zero_noise:
             return gen_niche_trigger(read_in_corsika(file, self.cfg), self.noise)
         else:
-            return gen_niche_trigger(read_in_corsika(file, self.cfg), generate_background(self.cfg.noise_files))
+            return gen_niche_trigger(read_in_corsika(file, self.cfg), generate_background(self.cfg.noise_open_files))
 
     def pseudotrigger(self, nfit: NicheFit) -> bool:
         '''This method computes whether the waveform exceeds the specific counter's

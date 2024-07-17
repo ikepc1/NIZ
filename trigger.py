@@ -7,7 +7,8 @@ from tunka_fit import TunkaPMTPulse
 from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
 from noise import random_noise, read_noise_file
-from config import CounterConfig, photon_time_bins, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
+from config import photon_time_bins, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
+from counter_config import CounterConfig
 from utils import date2bytes
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:

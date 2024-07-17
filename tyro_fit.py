@@ -5,7 +5,7 @@ from scipy.optimize import curve_fit
 # from datetime import datetime
 from dataclasses import dataclass
 
-from config import COUNTER_POSITIONS, CounterConfig
+from config import COUNTER_POSITIONS
 from niche_fit import NicheFit, NicheRaw
 
 def hex_to_s(hex_ts: str) -> float:

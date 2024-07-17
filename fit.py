@@ -14,7 +14,8 @@ from tyro_fit import tyro, TyroFit
 from niche_plane import NichePlane, NicheFit
 from gen_ckv_signals import Event, get_ckv, CherenkovOutput, GetCkv
 from process_showers import ProcessEvents
-from config import CounterConfig, COUNTER_NO, NAMES, COUNTER_POSITIONS, WAVEFORM_SIZE, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE, COUNTER_QE, COUNTER_FADC_PER_PE
+from config import COUNTER_NO, NAMES, COUNTER_POSITIONS, WAVEFORM_SIZE, TRIGGER_POSITION, NICHE_TIMEBIN_SIZE, COUNTER_QE, COUNTER_FADC_PER_PE
+from counter_config import CounterConfig
 from trigger import TriggerSim, rawphotons2fadc
 from noise import read_noise_file
 
