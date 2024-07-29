@@ -159,6 +159,16 @@ COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
                         'rossi':     1.,
                         'rubin':     1.}
 
+
+COUNTER_FADC_PER_PHOTON = {'bardeen': 0.0662096077798707,
+                           'bell': 0.2234225986283753,
+                           'curie': 0.2884180311773283,
+                           'feynman': 0.23328865659345435,
+                           'newton': 0.3402480221313617,
+                           'noether': 0.29659620958671246,
+                           'rossi': 0.15655574419951962,
+                           'rubin': 0.17445335157746403}
+
 # COUNTER_FADC_PER_PE =  {'curie':     2., # number of fadc counts per PE
 #                         'dirac':     2.,
 #                         'einstein':  2.,
