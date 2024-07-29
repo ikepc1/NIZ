@@ -72,3 +72,8 @@ def read_calib_files(counter: str) -> list[CalibPulse]:
             nraws.extend(read_niche_file(file))
     return nraws
 
+def pulse_values(calibs: list[CalibPulse]) -> np.ndarray:
+    vals = []
+    for c in calibs:
+        vals.extend(c.pulse.tolist())
+    return np.array(vals)
