@@ -30,6 +30,19 @@ def datetime_from_filename(file: Path) -> datetime:
     '''
     return datetime.strptime(isolate_digits(file.name), '%Y%m%d%H%M%S')
 
+def weather_from_time(ts: datetime) -> str:
+    '''This function gets the weather closest to a given time.
+    '''
+    ts_numpy = np.datetime64(ts)
+    weather = np.load('weather.npz')
+    return weather['codes'][np.argmin(np.abs(weather['times'] - ts_numpy))]
+
+def weather_sum(weat: str) -> int:
+    sum = 0
+    for char in weat:
+        sum += int(char)
+    return sum
+
 def preceding_noise_files(datafile: Path) -> tuple[Path]:
     '''This function finds the noise file immediately preceding the input data
     file.
@@ -69,7 +82,7 @@ def get_data_files(timestr: str) -> list[Path]:
     this work for either noise or nightsky files.
     '''
     data_directory_path = Path(RAW_DATA_PATH) / timestr[:8]
-    return sorted(data_directory_path.glob(f'*/{timestr}*.bin'))
+    return sorted(data_directory_path.glob(f'*/{timestr[:-1]}*.bin'))
 
 def read_niche_file(filepath: Path) -> list[NicheRaw]:
     '''This function reads a noise file and returns a numoy array of the traces.
