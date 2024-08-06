@@ -1,6 +1,6 @@
 import numpy as np
 
-TUBE_AREA = 1197. #effective tube area in m^2
+TUBE_AREA = 1197. #effective tube area in mm^2
 TUBE_AREA_ERR = .03
 DIST = 1237. #distance from flasher to center of camera face in m
 DIST_ERR = 0.7
@@ -38,3 +38,20 @@ def photons_err(npes: np.ndarray) -> np.ndarray:
                   (dgdu*UV_FILTER_EFF_ERR)**2 + 
                   (dgda*TUBE_AREA_ERR)**2)
     return err
+
+def rho() -> float:
+    return QE*COL_EFF*UV_FILTER_EFF
+
+def rho_err() -> float:
+    return np.sqrt((COL_EFF*UV_FILTER_EFF*QE_ERR)**2 + (QE*COL_EFF*UV_FILTER_EFF_ERR)**2)
+
+def omega() -> float:
+    return TUBE_AREA / DIST**2
+
+def omega_err() -> float:
+    return np.sqrt(((1/DIST**2)*TUBE_AREA_ERR)**2 + ((-2*TUBE_AREA/DIST**3)*DIST_ERR)**2)
+
+# def photons_err(npes: np.ndarray) -> np.ndarray:
+#     '''This function calculates the error in the photon measurement.
+#     '''
+#     return np.sqrt(((1/(rho()*omega()))*NPE_ERR)**2 + ((-npes/(omega()*rho()**2))*rho_err())**2 + ((-npes/(rho()*omega()**2))*omega_err())**2)

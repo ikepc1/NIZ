@@ -159,15 +159,28 @@ COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
                         'rossi':     1.,
                         'rubin':     1.}
 
+'''Both of the following are from the calibration night.
+'''
+COUNTER_FADC_PER_PHOTON = {'bardeen': 2.188203688465158,
+                           'bell': 7.406880637204029,
+                           'curie': 9.561962861718685,
+                           'feynman': 7.734872492963434,
+                           'newton': 11.281268225032628,
+                           'noether': 9.834954480425155,
+                           'rossi': 5.1908236939723436,
+                           'rubin': 5.783684658654795}
 
-COUNTER_FADC_PER_PHOTON = {'bardeen': 0.0662096077798707,
-                           'bell': 0.2234225986283753,
-                           'curie': 0.2884180311773283,
-                           'feynman': 0.23328865659345435,
-                           'newton': 0.3402480221313617,
-                           'noether': 0.29659620958671246,
-                           'rossi': 0.15655574419951962,
-                           'rubin': 0.17445335157746403}
+COUNTER_NOISE_LEVEL = {'bardeen': 4.44597979813936,
+                       'bell': 36.87722110836859,
+                       'curie': 45.91072757590564,
+                       'feynman': 41.874449050198805,
+                       'newton': 45.9294395593107,
+                       'noether': 39.88911558052739,
+                       'rossi': 22.573392919805574,
+                       'rubin': 14.682870253902644,
+                       }
+# NSBG = 242.9651726980374
+NSBG = 300.
 
 # COUNTER_FADC_PER_PE =  {'curie':     2., # number of fadc counts per PE
 #                         'dirac':     2.,

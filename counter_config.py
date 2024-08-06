@@ -2,9 +2,9 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 
-from config import COUNTER_POSITIONS_DICT, COUNTER_QE, COUNTER_PMT_DELAY, COUNTER_FADC_PER_PHOTON
+from config import COUNTER_POSITIONS_DICT, COUNTER_QE, COUNTER_PMT_DELAY, COUNTER_FADC_PER_PHOTON, NSBG
 from utils import read_niche_file, read_noise_file, get_data_files, preceding_noise_files
-from noise import noise_fft
+from noise import noise_fft, freq_mhz
 from niche_raw import NicheRaw
 
 @dataclass
@@ -95,6 +95,7 @@ def noise_level(cfg: CounterConfig) -> dict[str,float]:
     '''This function returns the average value of the noise open minus 
     noise closed power spectra for each counter.
     '''
+    freq = freq_mhz()
     noisedict = {}
     for open, closed in zip(cfg.noise_open_files,cfg.noise_closed_files):
         try:
@@ -109,7 +110,8 @@ def noise_level(cfg: CounterConfig) -> dict[str,float]:
             continue
         open_noise = noise_fft(open_traces)
         closed_noise = noise_fft(closed_traces)
-        mean = np.mean(open_noise - closed_noise)
+        max = np.max((open_noise**2 - closed_noise**2)[freq>0.])
+        mean = np.mean(open_noise[freq>0.] - closed_noise[freq>0.])
         #if the difference is small or negative, either the shutter didn't open, or the files were messed up.
         if mean < 1.:
             noisedict[open.parent.name] = np.nan
@@ -118,12 +120,13 @@ def noise_level(cfg: CounterConfig) -> dict[str,float]:
             # print(open.name)
             # print(closed.name)
         else:
-            noisedict[open.parent.name] = mean
+            noisedict[open.parent.name] = max
     return noisedict
 
-def estimate_nsbg(cfg: CounterConfig) -> float:
+def estimate_nsbg(cfg: CounterConfig) -> dict[str,float]:
     ''''''
     noisedict = noise_level(cfg)
+    return {c:noisedict[c]/COUNTER_FADC_PER_PHOTON[c]**2 for c in noisedict if c in COUNTER_FADC_PER_PHOTON}
 
     
 def estimate_gain(cfg: CounterConfig) -> dict[str,float]:
@@ -131,6 +134,8 @@ def estimate_gain(cfg: CounterConfig) -> dict[str,float]:
     each counter.
     '''
     noisedict = noise_level(cfg)
+    gaindict = {c:np.sqrt(noisedict[c]/NSBG) for c in noisedict}
+    return gaindict
 
 def avg_temp(cfg: CounterConfig) -> dict[str,float]:
     '''This method calculates the average temperature for each counter

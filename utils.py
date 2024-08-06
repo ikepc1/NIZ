@@ -144,7 +144,7 @@ def plot_event(fit: TyroFit, title: str='') -> None:
     plot_triggers(fit)
     plt.suptitle(title)
 
-def plot_generator(event_dataframe: pd.DataFrame) -> None:
+def plot_generator(event_dataframe: pd.DataFrame) -> None: # type: ignore
     '''This is a generator which produces plots one at a time of each 
     trigger in an event dataframe.
     '''
