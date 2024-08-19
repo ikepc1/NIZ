@@ -8,7 +8,7 @@ from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
 from noise import random_noise, read_noise_file
 from config import photon_time_bins, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
-from counter_config import CounterConfig
+from counter_config import CounterConfig, estimate_gain
 from utils import date2bytes
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:
@@ -98,6 +98,7 @@ class TriggerSim:
         self.cfg = cfg
         self.array_shape = (len(cfg.active_counters), WAVEFORM_SIZE)
         self.tunka = TunkaPMTPulse(t0=40)
+        # self.gains = estimate_gain(cfg)
 
     def tunka_convolve(self, pes: np.ndarray, times: np.ndarray, delay: float) -> np.ndarray:
         '''This method convolves the photoelectron signal of a counter with a
@@ -124,8 +125,9 @@ class TriggerSim:
         electrons at the anode, this is the pulse shape at the anode (in units of cathode electrons).
         '''
         anode_electrons = np.empty_like(incident_photons)
-        pes = self.quantum_efficiency(incident_photons)
-        for i, (pes, d) in enumerate(zip(pes, self.cfg.pmt_delay.values())):
+        # pes = self.quantum_efficiency(incident_photons)
+        pes = incident_photons
+        for i, (pes, d) in enumerate(zip(pes, np.full(len(self.cfg.active_counters),40.))):
             anode_electrons[i] = self.tunka_convolve(pes, times, d)
         return anode_electrons
     
@@ -146,7 +148,7 @@ class TriggerSim:
         '''
         bins = self.NICHE_bins(g_time_bins)
         FADC_count_array = np.empty((len(self.cfg.active_counters), bins.size))
-        for i, (pes ,fp) in enumerate(zip(pmt_electrons, self.cfg.fadc_per_pe.values())):
+        for i, (pes ,fp) in enumerate(zip(pmt_electrons, self.cfg.gains.values())):
             FADC_count_array[i] = fp * pes[::int(NICHE_TIMEBIN_SIZE)]
         # fadc_counts = np.round(FADC_count_array)
         return FADC_count_array , bins
@@ -232,7 +234,7 @@ class NicheTriggers:
         for name, wf, t in zip(self.names, self.waveforms, self.times):
             self.cts[name] = CounterTrigger(name,wf,t,self.datebytes)
 
-def rawphotons2fadc(ckv: CherenkovOutput, t_offset: float) -> tuple[np.ndarray]:
+def rawphotons2fadc(ckv: CherenkovOutput, t_offset: float) -> tuple:
     incident_ckv_summed = sum_over_wavelengths(ckv.photons)
     incident_photons, photon_bins = gen_photon_signal(incident_ckv_summed,ckv.times,t_offset)
     photon_times = bin_medians(photon_bins)

@@ -3,8 +3,12 @@ import polars as pl
 import pandas as pd
 from scipy.stats import norm
 import numpy as np
+from datetime import datetime
+
 from write_niche import CounterTrigger
-from config import CounterConfig, WAVEFORM_SIZE, MIN_LE, THROW_RADIUS, E_BIN_EDGES, N_THROWN
+from config import WAVEFORM_SIZE, MIN_LE, THROW_RADIUS, E_BIN_EDGES, N_THROWN
+from counter_config import CounterConfig
+from gen_ckv_signals import Event
 
 def gen_zeniths(N_events: int = 100) -> np.ndarray:
     '''This function draws random zenith angles from the pdf 
@@ -19,7 +23,7 @@ def gen_azimuths(N_events: int = 100) -> np.ndarray:
     '''
     return np.random.uniform(size = N_events) * 2 * np.pi
 
-def gen_core_pos(r: float, cfg: CounterConfig, N_events: int = 100) -> tuple[np.ndarray]:
+def gen_core_pos(r: float, cfg: CounterConfig, N_events: int = 100) -> np.ndarray:
     '''This function generates the core positions of events in a 
     circle of radius r.
     '''
@@ -28,7 +32,7 @@ def gen_core_pos(r: float, cfg: CounterConfig, N_events: int = 100) -> tuple[np.
     zs = np.zeros_like(phis)
     return np.vstack((rs * np.cos(phis), rs * np.sin(phis), zs)).T + cfg.counter_bottom
 
-def Nmax(E: float | np.ndarray) -> float:
+def Nmax(E: float | np.ndarray) -> float | np.ndarray:
     '''This function calculates a shower's Nmax based on its energy.
     '''
     return E * 1.3e-9
@@ -77,13 +81,13 @@ def Xmax_of_lE(lEs: np.ndarray) -> np.ndarray:
         xmaxs[i] = xgen.gen_Xmax(lE)
     return xmaxs
 
-def placeholder_triggers(n_events: int, cfg: CounterConfig) -> np.ndarray[CounterTrigger]:
+def placeholder_triggers(n_events: int, cfg: CounterConfig) -> np.ndarray:
     '''This function generates an array of null CounterTrigger objects so
     full size df can be generated.
     '''
     arr = np.empty((len(cfg.active_counters), n_events), dtype='o')
     for i, counter_name in enumerate(cfg.active_counters):
-        trig = CounterTrigger(counter_name, np.zeros(WAVEFORM_SIZE), np.zeros(WAVEFORM_SIZE))
+        trig = CounterTrigger(counter_name, np.zeros(WAVEFORM_SIZE), np.zeros(WAVEFORM_SIZE), datetime.now())
         arr[i] = np.full(n_events, trig, dtype='o')
     return arr
 
@@ -92,7 +96,7 @@ class MCParams:
     '''This is the container for the parameters used in an MC run.
     '''
 
-    cfg: CounterConfig
+    # cfg: CounterConfig
     lEmin: float = 14.
     lEmax: float = 17.
     gamma: float = -2.
@@ -113,13 +117,13 @@ class MCParams:
         p = 1 + self.gamma
         return (cdf*(self.Emax**p - self.Emin**p) + self.Emin**p)**(1/p)
 
-    def gen_event_params(self) -> pd.DataFrame:
+    def gen_event_params(self, cfg: CounterConfig) -> pd.DataFrame:
         '''This method returns a dataframe with the parameters for each 
         event, with empty columns for the NicheRaw objects for each counter 
         and the fits.
         '''
         Es = self.draw_Es()
-        cores = gen_core_pos(self.radius, self.cfg, N_events=self.N_events)
+        cores = gen_core_pos(self.radius, cfg, N_events=self.N_events)
         zeniths = gen_zeniths(self.N_events)
         # zeniths[zeniths>np.deg2rad(45.)] = np.deg2rad(45.)
         params_dict = {
@@ -139,35 +143,125 @@ class MCParams:
         params_dict['Fit'] = np.full(self.N_events,np.NAN)
         params_dict['Plane Fit'] = np.full(self.N_events,np.NAN)
         params_dict['guess'] = np.empty(self.N_events, dtype='O')
-        for counter_name in self.cfg.active_counters:
+        for counter_name in cfg.active_counters:
             params_dict[counter_name] = np.full(self.N_events,np.NAN)
         return pd.DataFrame.from_dict(params_dict)
 
+def draw_Es(N_events: int, lEmin: float = 14., lEmax: float = 17., gamma: float = -3.) -> np.ndarray:
+    '''This method draws random energies within the interval 
+    specified from a spectrum specified by gamma.
+    '''
+    Emin = 10**lEmin
+    Emax = 10**lEmax
+    cdf = np.random.uniform(size = N_events)
+    p = 1 + gamma
+    return (cdf*(Emax**p - Emin**p) + Emin**p)**(1/p)
 
-def gen_params_in_bins(cfg: CounterConfig) -> list[MCParams]:
+def gen_events(N_events: int, Emin: float = 14., Emax: float = 17., gamma: float = -3.) -> list[Event]:
+    Es = draw_Es(N_events, Emin, Emax, gamma)
+    xmaxs = Xmax_of_lE(np.log10(Es))
+    nmaxs = Nmax(Es)
+    zeniths = gen_zeniths(N_events)
+    azimuths = gen_azimuths(N_events)
+    cores = np.zeros((N_events,3))
+    X0s = np.zeros_like(cores[:,0])
+    Lambdas = np.full_like(cores[:,0], 70.)
+    retlist = [Event(E,x,n,z,a,*c,x0,l) for E,x,n,z,a,c,x0,l in zip(Es,xmaxs,nmaxs,zeniths,azimuths,cores,X0s,Lambdas)] # type: ignore
+    return retlist
+
+def gen_params_in_bins() -> list[MCParams]:
     '''This function creates a list of shower parameter Dataframes for each energy bin.
     '''
     param_list = []
     for low, high in zip(E_BIN_EDGES[:-1], E_BIN_EDGES[1:]):
-        param_list.append(MCParams(cfg, N_events=N_THROWN, lEmin=low, lEmax=high))
+        param_list.append(MCParams(N_events=N_THROWN, lEmin=low, lEmax=high))
     return param_list
+
+def showlib_infile(E: float, thinrat: str, maxweight: str, no: int) -> str:
+    '''This function generates a corsika infile for a given event.
+    '''
+    if no <10:
+        n = f'0{no}'
+    else:
+        n = f'{no}'
+    egev = E * 1.e-9
+    # tel_def = TelescopeDefinition(cfg.positions_array, cfg.radii)
+    # counter_pos = np.round(tel_def.shift_counters(event.core_location) * 100.) #cm
+    string =  (f'RUNNR   0000{n}                        number of run\n'
+    f'EVTNR   1                             no of first shower event\n'
+    f'SEED    90000{n}  0  0                  seed for hadronic part\n'
+    f'SEED    90000{n}  0  0                  seed for EGS4 part\n'
+    f'NSHOW   1                             no of showers to simulate\n'
+    f'PRMPAR  14                            primary particle code (proton)\n'
+    f'ERANGE  {egev:.2e} {egev:.2e}           energy range of primary particle   \n'
+    f'ESLOPE  -1.0                          slope of energy spectrum\n'
+    f'THETAP  0. 35.                       range of zenith angle (deg)\n'
+    f'PHIP    0. 360                       range of azimuth angle (deg)\n'
+    f'THIN    {thinrat} {maxweight} 0.0           thinning parameters\n'
+    f'ECUTS   0.3 0.3 0.001 0.001           energy cuts for particles (15 MeV for e, below Cherenkov thresh)\n'
+    f'ATMOSPHERE 11 T                       use atmosphere 11 (Utah average) with refractions\n'
+    f'MAGNET  21.95 46.40                   magnetic field (TA .. Middle Drum)\n'
+    f'ARRANG  0.0			      rotation of array to north (X along magnetic north) Declination assumed 11.9767 deg\n'
+    f'OBSLEV  1.534e5                       observation level (in cm) (ground at lowest NICHE counter)\n'
+    f'PAROUT  F F                           no DATnnnnnn, no DATnnnnnn.tab\n'
+    f'DATBAS  F                             write database file\n'
+    f'LONGI   T 1 T T                       create logitudinal info & fit\n')
+    return string
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+    import sys
+    from utils import *
     plt.ion()
-    mc = MCParams(N_events=10000).gen_event_params()
+    # evs = gen_events(64,Emin=15.5,gamma=-2)
 
-    plt.figure()
-    plt.hist(mc['Xmax'],histtype='step', bins = 100)
-    plt.xlabel('Xmax')
+    # plt.figure()
+    # plt.hist([e.E for e in evs])
+    # from gen_ckv_signals import *
 
-    plt.figure()
-    plt.scatter(np.log10(mc['E']),mc['Xmax'],s=.01)
-    plt.semilogy()
-    plt.xlabel('log10(E/eV)')
-    plt.ylabel('Xmax')
 
-    plt.figure()
-    plt.scatter(mc['corex'],mc['corey'],s=.01)
-    plt.xlabel('core x (m)')
-    plt.ylabel('core y (m)')
+    lE = float(sys.argv[1])
+    thinrat = str(sys.argv[2])
+    maxweight = str(sys.argv[3])
+    E = 10**lE
+
+    showlib_dir = Path(f'showlib/log10E_{lE}')
+    showlib_dir.mkdir(exist_ok=True)
+
+    names = []
+    for i in range(1,513):
+        names.append(f'{str(showlib_dir)}/DAT000{str(i):>03}.in')
+
+    for i, name in enumerate(names):
+        write_file(name,showlib_infile(E,thinrat,maxweight,i+1))
+    
+    # lEs = [15.6,15.7,15.8]
+
+    # i = 1
+    # for lE in lEs:
+    #     showlib_dir = Path(f'showlib/log10E_{lE}')
+    #     showlib_dir.mkdir(exist_ok=True)
+    #     E = 10**lE
+    #     for j in range(512):
+    #         name = f'{str(showlib_dir)}/DAT{str(i):>06}.in'
+    #         write_file(name,showlib_infile(E,'1.0e-06','5.0e+00',i))
+    #         i += 1
+        
+
+
+    # mc = MCParams(N_events=10000)
+
+    # plt.figure()
+    # plt.hist(mc['Xmax'],histtype='step', bins = 100)
+    # plt.xlabel('Xmax')
+
+    # plt.figure()
+    # plt.scatter(np.log10(mc['E']),mc['Xmax'],s=.01)
+    # plt.semilogy()
+    # plt.xlabel('log10(E/eV)')
+    # plt.ylabel('Xmax')
+
+    # plt.figure()
+    # plt.scatter(mc['corex'],mc['corey'],s=.01)
+    # plt.xlabel('core x (m)')
+    # plt.ylabel('core y (m)')

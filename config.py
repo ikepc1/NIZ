@@ -20,6 +20,7 @@ PHOTONS_TIMEBIN_SIZE = 1. #in ns
 TRIGGER_VARIANCE = 49.
 TRIGGER_WIDTH = 8
 TRIGGER_POSITION = 524
+TEL_RADII = .0508
 
 #MC Parameters
 N_ENERGY_BINS = 1
@@ -161,14 +162,23 @@ COUNTER_FADC_PER_PE =  {'curie':     1., # number of fadc counts per PE
 
 '''Both of the following are from the calibration night.
 '''
-COUNTER_FADC_PER_PHOTON = {'bardeen': 2.188203688465158,
-                           'bell': 7.406880637204029,
-                           'curie': 9.561962861718685,
-                           'feynman': 7.734872492963434,
-                           'newton': 11.281268225032628,
-                           'noether': 9.834954480425155,
-                           'rossi': 5.1908236939723436,
-                           'rubin': 5.783684658654795}
+# COUNTER_FADC_PER_PHOTON = {'bardeen': 2.188203688465158,
+#                            'bell': 7.406880637204029,
+#                            'curie': 9.561962861718685,
+#                            'feynman': 7.734872492963434,
+#                            'newton': 11.281268225032628,
+#                            'noether': 9.834954480425155,
+#                            'rossi': 5.1908236939723436,
+#                            'rubin': 5.783684658654795}
+
+COUNTER_FADC_PER_PHOTON = {'bardeen': 0.4301294450523357,
+ 'bell': 1.4639139998316604,
+ 'curie': 1.8795107279931322,
+ 'feynman': 1.5014120362528374,
+ 'newton': 2.182147680064487,
+ 'noether': 1.8765021501429047,
+ 'rossi': 1.0044919895844284,
+ 'rubin': 1.131329751694293}
 
 COUNTER_NOISE_LEVEL = {'bardeen': 4.44597979813936,
                        'bell': 36.87722110836859,
@@ -180,7 +190,7 @@ COUNTER_NOISE_LEVEL = {'bardeen': 4.44597979813936,
                        'rubin': 14.682870253902644,
                        }
 # NSBG = 242.9651726980374
-NSBG = 300.
+NSBG = 7965.114197731613
 
 # COUNTER_FADC_PER_PE =  {'curie':     2., # number of fadc counts per PE
 #                         'dirac':     2.,

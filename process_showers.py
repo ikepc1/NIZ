@@ -4,7 +4,7 @@ from alive_progress import alive_bar
 import numpy as np
 
 from trigger import NicheTriggers, gen_niche_trigger, generate_background, generate_zeros, get_thresholds
-from gen_ckv_signals import get_ckv, Event, read_in_corsika
+from gen_ckv_signals import get_ckv, Event, read_in_corsika, ckv_from_tilefile
 from config import TRIGGER_WIDTH
 from counter_config import CounterConfig
 from niche_fit import NicheFit
@@ -37,6 +37,13 @@ class ProcessEvents:
         else:
             return gen_niche_trigger(read_in_corsika(file, self.cfg), generate_background(self.cfg.noise_open_files))
 
+    def process_tf_event(self, ei, shift) -> NicheTriggers:
+        '''This function takes an event, generates a cherenkov signal'''
+        if self.frozen_noise or self.zero_noise:
+            return gen_niche_trigger(ckv_from_tilefile(ei, self.cfg, shift), self.noise)
+        else:
+            return gen_niche_trigger(ckv_from_tilefile(ei, self.cfg, shift), generate_background(self.cfg.noise_open_files))
+
     def pseudotrigger(self, nfit: NicheFit) -> bool:
         '''This method computes whether the waveform exceeds the specific counter's
         threshold.
@@ -53,8 +60,16 @@ class ProcessEvents:
         else:
             return nfits
         
-    def gen_nfits_from_ei(self, file: Event) -> list[NicheFit]:
+    def gen_nfits_from_ei(self, file: str) -> list[NicheFit]:
         trig = self.process_ei_event(file)
+        nfits = [trig.cts[name].to_nfit() for name in trig.names]
+        if self.zero_noise:
+            return [f for f in nfits if self.pseudotrigger(f)]
+        else:
+            return nfits
+        
+    def gen_nfits_from_tf(self, ei, shift) -> list[NicheFit]:
+        trig = self.process_tf_event(ei, shift)
         nfits = [trig.cts[name].to_nfit() for name in trig.names]
         if self.zero_noise:
             return [f for f in nfits if self.pseudotrigger(f)]

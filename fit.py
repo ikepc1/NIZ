@@ -133,7 +133,7 @@ class ParamMapper(Protocol):
     def get_params(self, evt: Event) -> np.ndarray:
         ...
 
-    def adjust_guess():
+    def adjust_guess(self):
         ...
 
 class FitFeature(ABC):
@@ -698,22 +698,25 @@ class AllSamples(FitFeature):
         return sim_wf[np.searchsorted(sim_times,real_trace_times, side='left')]
         # return np.interp(real_trace_times,sim_times,sim_wf, left=0., right=0.)
 
-    # @staticmethod
-    # def wf_baseline_parabola(wf: np.ndarray, tol:float=1.e-6) -> np.ndarray:
-    #     wf_start = np.argmax(wf[wf<1.e-6])
-    #     wf_rev = wf[::-1]
-    #     wf_end = np.argmax(wf_rev[wf_rev<1.e-6])
-    #     if wf_end == 0 or wf_start == 0:
-    #         return wf
-    #     wf[:wf_start] -= np.arange(wf_start)[::-1]**2
-    #     wf[-wf_end:] -= np.arange(wf_end)**2
-    #     return wf
+    @staticmethod
+    def wf_baseline_parabola(wf: np.ndarray, tol:float=1.e-6) -> np.ndarray:
+        wf_start = np.argmax(wf[wf<1.e-6])
+        wf_rev = wf[::-1]
+        wf_end = np.argmax(wf_rev[wf_rev<1.e-6])
+        if wf_end == 0 or wf_start == 0:
+            return wf
+        wf[:wf_start] -= np.arange(wf_start)[::-1]**2
+        wf[-wf_end:] -= np.arange(wf_end)**2
+        return wf
 
     def get_output(self, parameters: np.ndarray) -> np.ndarray:
         ckv = self.ckv_from_params(parameters)
         sigdict, times = ckv_signal_dict(ckv, parameters[-1])
+        # sigdict, times = ckv_signal_dict(ckv, 0.)
+        for c in self.nfit_dict:
+            sigdict[c][sigdict[c]>self.nfit_dict[c].max_value] = self.nfit_dict[c].max_value
         # sigdict, times = ckv_signal_dict(ckv)
-        # parabase_sigdict = {name:self.wf_baseline_parabola(sigdict[name]) for name in sigdict}
+        # sigdict = {name:self.wf_baseline_parabola(sigdict[name]) for name in sigdict}
         # times -= times[sigdict[self.biggest_counter].argmax()]
         wfs_at_real_times = [self.trace_at_times(sigdict[name],times,realtimes) for name, realtimes in zip(self.nfit_dict,self.real_times_array)]
         # wfs_at_real_times[wfs_at_real_times<0.] = 0.

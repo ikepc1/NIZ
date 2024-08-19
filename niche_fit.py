@@ -56,6 +56,10 @@ class NicheFit(NicheRaw):
         # s.intfit = quad(s.tunka_fit,0,len(s.waveform),pf)[0]
 
     @property
+    def max_value(self) -> float:
+        return 4096 - self.baseline
+
+    @property
     def peak_datetime(self) -> np.timedelta64:
         '''This method returns the datetime object for the actual time the peak occurred.
         '''

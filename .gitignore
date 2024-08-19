@@ -15,4 +15,7 @@
 *.txt
 *.npz
 *.ipynb
+*.long
+*.out
+showlib
 __pycache__

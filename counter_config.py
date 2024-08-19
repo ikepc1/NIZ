@@ -2,7 +2,7 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 
-from config import COUNTER_POSITIONS_DICT, COUNTER_QE, COUNTER_PMT_DELAY, COUNTER_FADC_PER_PHOTON, NSBG
+from config import COUNTER_POSITIONS_DICT, COUNTER_QE, COUNTER_PMT_DELAY, COUNTER_FADC_PER_PHOTON, NSBG, TEL_RADII
 from utils import read_niche_file, read_noise_file, get_data_files, preceding_noise_files
 from noise import noise_fft, freq_mhz
 from niche_raw import NicheRaw
@@ -17,7 +17,8 @@ class CounterConfig:
     noise_open_files: list[Path]
     max_photon_zenith: float = np.deg2rad(45)
 
-    # def __post_init__(self) -> None:
+    def __post_init__(self) -> None:
+        self.gains = estimate_gain(self)
 
     #     # self.active_counters = [f.parent.name for f in self.data_files]
     #     # self.positions = self.dict_comp(COUNTER_POSITIONS_DICT)
@@ -49,9 +50,12 @@ class CounterConfig:
     def quantum_efficiency(self) -> dict:
         return self.dict_comp(COUNTER_QE)
     
+    # @property
+    # def pmt_gain(self) -> dict:
+    #     return self.dict_comp()
     @property
-    def pmt_gain(self) -> dict:
-        return self.dict_comp()
+    def radii(self) -> float:
+        return TEL_RADII
 
     @property
     def counter_center(self) -> np.ndarray:

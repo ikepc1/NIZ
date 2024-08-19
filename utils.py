@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Any
 from scipy.signal import argrelmin
 from multiprocessing import Pool, cpu_count
 from alive_progress import alive_bar
@@ -43,7 +43,7 @@ def weather_sum(weat: str) -> int:
         sum += int(char)
     return sum
 
-def preceding_noise_files(datafile: Path) -> tuple[Path]:
+def preceding_noise_files(datafile: Path) -> tuple[Path,...]:
     '''This function finds the noise file immediately preceding the input data
     file.
     '''
@@ -57,7 +57,7 @@ def preceding_noise_files(datafile: Path) -> tuple[Path]:
     without_open = noise_files[noise_files != shutter_open_file]
     deltas_without_open = deltas[noise_files != shutter_open_file]
     shutter_closed_file = without_open[deltas_without_open.argmin()]
-    return shutter_closed_file, shutter_open_file
+    return shutter_closed_file, shutter_open_file # type: ignore
 
 def get_file_ts(file: Path) -> np.datetime64:
     '''This function gets the timestamp from the filename.
@@ -96,7 +96,7 @@ def read_noise_file(filepath: Path) -> np.ndarray:
     '''
     return np.vstack([nraw.waveform for nraw in read_niche_file(filepath)])
 
-def run_multiprocessing(func: Callable[[object],object], inputs: list[object], chunksize = 250) -> list[object]:
+def run_multiprocessing(func: Callable[[Any],Any], inputs: list[Any], chunksize = 250) -> list[Any]:
     '''This function maps a function to imap with the use of context managers
     and a progress bar.
     '''
@@ -161,7 +161,7 @@ def plot_generator(event_dataframe: pd.DataFrame) -> None: # type: ignore
         plt.legend()
         plt.xlim(COUNTER_POSITIONS[:,0].min() - 100., COUNTER_POSITIONS[:,0].max() + 100.)
         plt.ylim(COUNTER_POSITIONS[:,1].min() - 100., COUNTER_POSITIONS[:,1].max() + 100.)
-        yield
+        yield # type: ignore
 
 if __name__ == '__main__':
     datafile = Path('/home/isaac/niche_data/20231214/bardeen/20231214014805.bin')
