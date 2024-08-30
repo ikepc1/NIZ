@@ -4,10 +4,49 @@ from alive_progress import alive_bar
 import numpy as np
 
 from trigger import NicheTriggers, gen_niche_trigger, generate_background, generate_zeros, get_thresholds
-from gen_ckv_signals import get_ckv, Event, read_in_corsika, ckv_from_tilefile
+from gen_ckv_signals import get_ckv, Event, read_in_corsika, ckv_from_tilefile, CherenkovOutput
 from config import TRIGGER_WIDTH
 from counter_config import CounterConfig
 from niche_fit import NicheFit
+from noise import NoiseGen
+
+class ProcessCkv:
+    '''This class is responsible for mapping the detector configuration to
+    the eventprocessing procedure.
+    '''
+    def __init__(self, cfg: CounterConfig, frozen_noise: bool = False, zero_noise: bool = False) -> None:
+        self.cfg = cfg
+        self.frozen_noise = frozen_noise
+        self.zero_noise = zero_noise
+        self.noisegens = [NoiseGen(f) for f in self.cfg.noise_open_files]
+        if frozen_noise:
+            self.noise = generate_background(self.noisegens)
+        elif zero_noise:
+            self.noise = generate_zeros(self.cfg.noise_open_files)
+            self.thresholds = get_thresholds(self.cfg.noise_open_files)
+
+    def process(self, ckv: CherenkovOutput) -> NicheTriggers:
+        '''This function takes an event, generates a cherenkov signal'''
+        if self.frozen_noise or self.zero_noise:
+            return gen_niche_trigger(ckv, self.noise)
+        else:
+            return gen_niche_trigger(ckv, generate_background(self.noisegens))
+        
+    def pseudotrigger(self, nfit: NicheFit) -> bool:
+        '''This method computes whether the waveform exceeds the specific counter's
+        threshold.
+        '''
+        sums = np.cumsum(nfit.waveform)
+        means = (sums[TRIGGER_WIDTH:] - sums[:-TRIGGER_WIDTH])/TRIGGER_WIDTH
+        return (means > self.thresholds[nfit.name]).any()
+
+    def gen_nfits_from_ckv(self, ckv: CherenkovOutput) -> list[NicheFit]:
+        trig = self.process(ckv)
+        nfits = [trig.cts[name].to_nfit() for name in trig.names]
+        if self.zero_noise:
+            return [f for f in nfits if self.pseudotrigger(f)]
+        else:
+            return nfits
 
 class ProcessEvents:
     '''This class is responsible for mapping the detector configuration to

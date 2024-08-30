@@ -6,6 +6,7 @@ from niche_raw import NicheRaw
 from niche_fit import NicheFit
 from niche_plane import NichePlane
 from tyro_fit import tyro
+from fit import make_guess
 from utils import run_multiprocessing, save_df, read_niche_file, get_data_files
 from config import RAW_DATA_PATH, NIGHTSKY_DF_PATH
 from counter_config import CounterConfig, init_config
@@ -40,7 +41,7 @@ def nraw_list(events_dict: dict[str, list[NicheRaw]]) -> list[NicheRaw]:
         nraws.extend(events_dict[counter_name])
     return nraws
 
-def match_times(events_dict: dict[str, list[NicheRaw]], multiplicity: int = 5, ns_time_interval: int = 1000) -> list[np.ndarray]:
+def match_times(events_dict: dict[str, list[NicheRaw]], multiplicity: int = 3, ns_time_interval: int = 1000) -> list[np.ndarray]:
     '''This function takes the dictionary of all triggers for a night, and returns a 
     list of dictionaries where each entry is a time match.
     '''
@@ -88,12 +89,14 @@ def empty_row(cfg: CounterConfig) -> dict:
             'Lambda',
             'Fit',
             'Plane_Fit',
-            'weather']
-    row['config'] = cfg
+            'guess',
+            'weather',
+            'config']
     for counter in cfg.active_counters:
         cols.append(counter)
     for col in cols:
-        row[col] = np.nan
+        row[col] = None
+    row['config'] = cfg
     return row
 
 def get_weather(event: list[NicheFit], weather: dict) -> str:
@@ -117,6 +120,7 @@ def init_niche_nightsky_df(cfg: CounterConfig) -> pd.DataFrame:
         row['Fit'] = tyro(list(match))
         row['Plane_Fit'] = NichePlane(list(match))
         row['weather'] = get_weather(match.tolist(), weather)
+        row['guess'] = make_guess(row['Fit'],row['Plane_Fit'],cfg)
         rows.append(row)
     return pd.DataFrame(rows)
 

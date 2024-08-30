@@ -1,4 +1,5 @@
 import numpy as np
+# import cupy as np
 from dataclasses import dataclass
 from scipy.signal import fftconvolve
 from pathlib import Path
@@ -6,10 +7,10 @@ from pathlib import Path
 from tunka_fit import TunkaPMTPulse
 from write_niche import CounterTrigger
 from gen_ckv_signals import CherenkovOutput
-from noise import random_noise, read_noise_file
+from noise import random_noise, read_noise_file, NoiseGen
 from config import photon_time_bins, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS, NICHE_TIMEBIN_SIZE, PHOTONS_WINDOW_SIZE, PHOTONS_TIMEBIN_SIZE, WAVEFORM_SIZE, TRIGGER_WIDTH, TRIGGER_VARIANCE, TRIGGER_POSITION 
 from counter_config import CounterConfig, estimate_gain
-from utils import date2bytes
+from utils import date2bytes, run_multiprocessing
 
 def calc_bins(og_time_bins: np.ndarray, new_bin_size: float) -> np.ndarray:
     '''This method calculates the time bins needed to fit photon temporal
@@ -41,7 +42,7 @@ def bin_medians(bins: np.ndarray) -> np.ndarray:
     '''
     return bins[:-1]+(bins[1:]-bins[:-1])/2
 
-def bin_photons(photons: np.ndarray, original_times: np.ndarray) -> np.ndarray:
+def bin_photons(photons: np.ndarray, original_times: np.ndarray) -> tuple[np.ndarray,np.ndarray]:
     '''This method calculates the histogram of the photon counts in the original
     time bins in the PHOTONS_TIMEBIN_SIZE time bins.
     '''
@@ -66,14 +67,23 @@ def gen_photon_signal(n_cerenk_photons: np.ndarray, original_time_bins: np.ndarr
         signal_array[i], bins = bin_photons(nps, otb)
     return signal_array, bins
 
-def generate_background(noise_files: list[Path]) -> np.ndarray:
+def generate_background(noisegens: list[NoiseGen]) -> np.ndarray:
     '''This function takes the noise files for a given night and returns an array of 
     simulated random noise with the same power spectrum as the real noise for that data part.
     '''
-    noise_array = np.empty((len(noise_files), WAVEFORM_SIZE*N_SIM_TRIGGER_WINDOWS))
-    for i, file in enumerate(noise_files):
-        noise_array[i] = random_noise(file, N_SIM_TRIGGER_WINDOWS)[0]
+    noise_array = np.empty((len(noisegens), WAVEFORM_SIZE*N_SIM_TRIGGER_WINDOWS))
+    for i, gen in enumerate(noisegens):
+        noise_array[i] = gen.random_noise(N_SIM_TRIGGER_WINDOWS)[0]
     return noise_array
+
+# def generate_background(noise_files: list[Path]) -> np.ndarray:
+#     '''This function takes the noise files for a given night and returns an array of 
+#     simulated random noise with the same power spectrum as the real noise for that data part.
+#     '''
+#     noise_array = np.empty((len(noise_files), WAVEFORM_SIZE*N_SIM_TRIGGER_WINDOWS))
+#     for i, file in enumerate(noise_files):
+#         noise_array[i] = random_noise(file, N_SIM_TRIGGER_WINDOWS)[0]
+#     return noise_array
 
 def generate_zeros(noise_files: list[Path]) -> np.ndarray:
     '''This function generates an array of zeros in the same shape as the background array.
@@ -85,7 +95,7 @@ def get_baselines(noise_files: list[Path]) -> np.ndarray:
     '''
     return np.array([read_noise_file(file).mean() for file in noise_files])
 
-def get_thresholds(noise_files: list[Path]) -> dict[str,float]:
+def get_thresholds(noise_files: list[Path]) -> dict[str,np.ndarray]:
     '''This function gets the trigger threshold for each counter.
     '''
     return {file.parent.name:TriggerSim.threshold(read_noise_file(file)) for file in noise_files}

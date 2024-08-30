@@ -5,8 +5,9 @@ from scipy.stats import norm
 import numpy as np
 from datetime import datetime
 
+from showlib import draw_shower_from_library
 from write_niche import CounterTrigger
-from config import WAVEFORM_SIZE, MIN_LE, THROW_RADIUS, E_BIN_EDGES, N_THROWN
+from config import WAVEFORM_SIZE, MIN_LE, THROW_RADIUS, E_BIN_EDGES, N_THROWN, COUNTER_POSITIONS
 from counter_config import CounterConfig
 from gen_ckv_signals import Event
 
@@ -70,6 +71,52 @@ class DrawXmax:
         cdf = self.cdfs[np.abs(lE-self.lEs).argmin()]
         return np.interp(rvs,cdf,self.Xs)
 
+def counter_bottom() -> np.ndarray:
+    '''This is the centroid of the active counter's positions.
+    '''
+    avgx = COUNTER_POSITIONS[:,0].mean()
+    avgy = COUNTER_POSITIONS[:,1].mean()
+    avgz = COUNTER_POSITIONS[:,2].min()
+    return np.array([avgx, avgy, avgz])
+
+def counter_center() -> np.ndarray:
+    '''This is the centroid of the active counter's positions.
+    '''
+    avgx = COUNTER_POSITIONS[:,0].mean()
+    avgy = COUNTER_POSITIONS[:,1].mean()
+    avgz = COUNTER_POSITIONS[:,2].mean()
+    return np.array([avgx, avgy, avgz])
+
+def gen_event_params(cfg: CounterConfig, min_lE: float, max_lE, gamma: float, N_events: int) -> dict:
+    '''This method returns a dataframe with the parameters for each 
+    event, with empty columns for the NicheRaw objects for each counter 
+    and the fits.
+    '''
+    Es = MCParams(min_lE,max_lE,gamma, N_events=N_events).draw_Es()
+    cores = gen_core_pos(THROW_RADIUS, cfg, N_events=N_events)
+    params_dict = {
+            'E': Es,
+            'xmax': np.full(N_events,np.NAN),     
+            'nmax': np.full(N_events,np.NAN),
+            'zenith': gen_zeniths(N_events),
+            'azimuth': gen_azimuths(N_events),
+            'corex': cores[:,0],
+            'corey': cores[:,1],
+            # 'corex': np.full_like(cores[:,0],437.),
+            # 'corey': np.full_like(cores[:,0],-660.),
+            'corez': cores[:,2],
+            'X0': np.full(N_events,np.NAN),
+            'Lambda': np.full_like(cores[:,0], 70.)
+        }
+    params_dict['Fit'] = np.empty(N_events, dtype='O')
+    params_dict['Plane_Fit'] = np.empty(N_events, dtype='O')
+    params_dict['guess'] = np.empty(N_events, dtype='O')
+    params_dict['weather'] = np.empty(N_events, dtype=str)
+    params_dict['config'] = np.full(N_events,cfg, dtype='O')
+    for counter_name in cfg.active_counters:
+        params_dict[counter_name] = np.empty(N_events, dtype='O')
+    return params_dict
+
 def Xmax_of_lE(lEs: np.ndarray) -> np.ndarray:
     '''This function returns a list of drawn Xmax values corresponding to the input
     energies.    # return np.arcsin(np.random.uniform(size = N_events))
@@ -132,10 +179,10 @@ class MCParams:
                 'nmax': Nmax(Es),
                 'zenith': zeniths,
                 'azimuth': gen_azimuths(self.N_events),
-                # 'corex': cores[:,0],
-                # 'corey': cores[:,1],
-                'corex': np.full_like(cores[:,0],437.),
-                'corey': np.full_like(cores[:,0],-660.),
+                'corex': cores[:,0],
+                'corey': cores[:,1],
+                # 'corex': np.full_like(cores[:,0],437.),
+                # 'corey': np.full_like(cores[:,0],-660.),
                 'corez': cores[:,2],
                 'X0': np.zeros_like(cores[:,0]),
                 'Lambda': np.full_like(cores[:,0], 70.)
@@ -189,20 +236,20 @@ def showlib_infile(E: float, thinrat: str, maxweight: str, no: int) -> str:
     # counter_pos = np.round(tel_def.shift_counters(event.core_location) * 100.) #cm
     string =  (f'RUNNR   0000{n}                        number of run\n'
     f'EVTNR   1                             no of first shower event\n'
-    f'SEED    90000{n}  0  0                  seed for hadronic part\n'
-    f'SEED    90000{n}  0  0                  seed for EGS4 part\n'
+    f'SEED    {str(E)[0]}000{n}  0  0                  seed for hadronic part\n'
+    f'SEED    {str(E)[0]}000{n}  0  0                  seed for EGS4 part\n'
     f'NSHOW   1                             no of showers to simulate\n'
     f'PRMPAR  14                            primary particle code (proton)\n'
     f'ERANGE  {egev:.2e} {egev:.2e}           energy range of primary particle   \n'
     f'ESLOPE  -1.0                          slope of energy spectrum\n'
-    f'THETAP  0. 35.                       range of zenith angle (deg)\n'
+    f'THETAP  30. 30.                       range of zenith angle (deg)\n'
     f'PHIP    0. 360                       range of azimuth angle (deg)\n'
     f'THIN    {thinrat} {maxweight} 0.0           thinning parameters\n'
     f'ECUTS   0.3 0.3 0.001 0.001           energy cuts for particles (15 MeV for e, below Cherenkov thresh)\n'
     f'ATMOSPHERE 11 T                       use atmosphere 11 (Utah average) with refractions\n'
     f'MAGNET  21.95 46.40                   magnetic field (TA .. Middle Drum)\n'
     f'ARRANG  0.0			      rotation of array to north (X along magnetic north) Declination assumed 11.9767 deg\n'
-    f'OBSLEV  1.534e5                       observation level (in cm) (ground at lowest NICHE counter)\n'
+    f'OBSLEV  0.0                       observation level (in cm) (ground at lowest NICHE counter)\n'
     f'PAROUT  F F                           no DATnnnnnn, no DATnnnnnn.tab\n'
     f'DATBAS  F                             write database file\n'
     f'LONGI   T 1 T T                       create logitudinal info & fit\n')

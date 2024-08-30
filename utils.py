@@ -13,6 +13,22 @@ from pathlib import Path
 from niche_bin import bin_to_raw, NicheRaw
 from tyro_fit import TyroFit
 
+def counter_bottom() -> np.ndarray:
+    '''This is the centroid of the active counter's positions.
+    '''
+    avgx = COUNTER_POSITIONS[:,0].mean()
+    avgy = COUNTER_POSITIONS[:,1].mean()
+    avgz = COUNTER_POSITIONS[:,2].min()
+    return np.array([avgx, avgy, avgz])
+
+def counter_center() -> np.ndarray:
+    '''This is the centroid of the active counter's positions.
+    '''
+    avgx = COUNTER_POSITIONS[:,0].mean()
+    avgy = COUNTER_POSITIONS[:,1].mean()
+    avgz = COUNTER_POSITIONS[:,2].mean()
+    return np.array([avgx, avgy, avgz])
+
 def write_file(filename: str, content: str) -> None:
     file = Path(filename)
     file.touch()

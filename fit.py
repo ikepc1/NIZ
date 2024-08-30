@@ -1,13 +1,13 @@
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
 from scipy.optimize import curve_fit
-from scipy.stats import norm
 import numpy as np
-from dataclasses import dataclass, field
 import pandas as pd
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Protocol, Callable
 from abc import ABC, abstractmethod
+import sys
 
 from utils import run_multiprocessing
 from tyro_fit import tyro, TyroFit
@@ -641,7 +641,7 @@ class TimesWidthsAreas(FitFeature):
         return np.hstack((peaktimes,pulse_widths,pa_array/pa_array.sum()))
 
 class AllSamples(FitFeature):
-    wf_cushion = 7
+    wf_cushion = 4
     wf_start = TRIGGER_POSITION - wf_cushion
     wf_end = TRIGGER_POSITION + wf_cushion
 
@@ -753,7 +753,7 @@ class FitParam:
     '''
     name: str
     value: float
-    limits: tuple[float]
+    limits: tuple[float,float]
     error: float
     fixed: bool = False
 
@@ -765,8 +765,8 @@ def make_guess(ty: TyroFit, pf: NichePlane, cfg: CounterConfig) -> list[FitParam
     '''
     corez = cfg.counter_bottom[2]
     parlist = [
-        FitParam('xmax', 500., (400., 800.), 50.),
-        FitParam('nmax', 1.e6, (1.e4, 1.e8), 1.e5),
+        FitParam('xmax', 500., (400., 1000.), 50.),
+        FitParam('nmax', 1.e6, (1.e4, 1.e7), 1.e5),
         FitParam('zenith', pf.theta, (0., pf.theta +.1), np.deg2rad(1.)),
         FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.)),
         FitParam('corex',ty.core_estimate[0],ty.xlimits, 5.),
@@ -774,8 +774,8 @@ def make_guess(ty: TyroFit, pf: NichePlane, cfg: CounterConfig) -> list[FitParam
         # FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
         # FitParam('corez',-25.7,(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1.),
         FitParam('corez',corez,(corez,corez), 1., fixed=True),
-        FitParam('x0',0.,(0,0),1, fixed=True),
-        FitParam('lambda',70., (60.,80.),1, fixed=True),
+        FitParam('x0',0.,(-1.e3,1.e3),1, fixed=True),
+        FitParam('lambda',70., (40.,100.),1, fixed=True),
         FitParam('t_offset', 0., (-4.5e2, 4.5e2), 10.,fixed=False)
     ]
     return parlist
@@ -911,47 +911,48 @@ def update_guess_values(guess: list[FitParam], m: Minuit) -> list[FitParam]:
 
 class FitProcedure:
 
-    def __init__(self, cfg: CounterConfig) -> None:
+    def __init__(self, cfg: CounterConfig, nfits: list[NicheFit]) -> None:
         self.cfg = cfg
+        self.nfits = nfits
+        self.chi2ndof = 1.e10
+        
 
-    def fit_procedure(self, tpf: tuple[TyroFit,NichePlane]) -> list[FitParam]:
+    def fit_procedure(self, guess: list[FitParam]) -> list[FitParam]:
         '''This function is the full procedure for fitting a NICHE event.
         '''
-        ty,pf = tpf
-        guess = make_guess(ty,pf, self.cfg)
 
-        pt = PeakTimes(pf.counters, BasicParams, self.cfg)
+        pt = PeakTimes(self.nfits, BasicParams, self.cfg)
         pt.target_parameters = ['zenith','azimuth']
         m = init_minuit(pt, guess)
         m.tol = .1
         m.simplex()
 
-        guess = update_guess_values(guess, m)
-        pw = PulseWidth(pf.counters, BasicParams, self.cfg)
-        pw.target_parameters = ['xmax']
-        m = init_minuit(pw, guess)
-        m.simplex(ncall=40)
+        # guess = update_guess_values(guess, m)
+        # pw = PulseWidth(self.nfits, BasicParams, self.cfg)
+        # pw.target_parameters = ['xmax']
+        # m = init_minuit(pw, guess)
+        # m.simplex(ncall=40)
+
+        # guess = update_guess_values(guess, m)
+        # pa = PulseArea(self.nfits, BasicParams, self.cfg)
+        # pa.target_parameters = ['nmax']
+        # m = init_minuit(pa, guess)
+        # m.simplex(ncall=20)
 
         guess = update_guess_values(guess, m)
-        pa = PulseArea(pf.counters, BasicParams, self.cfg)
-        pa.target_parameters = ['nmax']
-        m = init_minuit(pa, guess)
-        m.simplex(ncall=20)
-
-        guess = update_guess_values(guess, m)
-        pa = NormalizedPulseArea(pf.counters, BasicParams, self.cfg)
+        pa = NormalizedPulseArea(self.nfits, BasicParams, self.cfg)
         pa.target_parameters = ['xmax','nmax','corex','corey']
         m = init_minuit(pa, guess)
         m.simplex()
 
         guess = update_guess(m)
-        at = AllTunka(pf.counters, BasicParams, self.cfg)
+        at = AllTunka(self.nfits, BasicParams, self.cfg)
         at.target_parameters = ['t_offset']
         m = init_minuit(at, guess)
         m.migrad()
 
         guess = update_guess(m)
-        at = AllSamples(pf.counters, BasicParams, self.cfg)
+        at = AllSamples(self.nfits, BasicParams, self.cfg)
         at.target_parameters = ['t_offset']
         m = init_minuit(at, guess)
 
@@ -963,401 +964,55 @@ class FitProcedure:
         m.fixed['azimuth'] = False
         m.fixed['corex'] = False
         m.fixed['corey'] = False
+        m.fixed['x0'] = False
+        m.fixed['lambda'] = False
         m.fixed['t_offset'] = False
         m.simplex()
 
+        self.chi2ndof = at.chi2(np.array([p.value for p in m.params]))/m.ndof
+
         guess = update_guess_values(guess,m)
         return guess
+    
+    def minimal_fit_procedure(self, guess: list[FitParam]) -> list[FitParam]:
+        '''This function is the minimal procedure for fitting a NICHE event.
+        '''
+
+        pt = PeakTimes(self.nfits, BasicParams, self.cfg)
+        pt.target_parameters = ['zenith','azimuth']
+        m = init_minuit(pt, guess)
+        m.tol = .1
+        m.simplex()
+
+        # guess = update_guess_values(guess, m)
+        # pw = PulseWidth(self.nfits, BasicParams, self.cfg)
+        # pw.target_parameters = ['xmax']
+        # m = init_minuit(pw, guess)
+        # m.simplex(ncall=40)
+
+        # guess = update_guess_values(guess, m)
+        # pa = PulseArea(self.nfits, BasicParams, self.cfg)
+        # pa.target_parameters = ['nmax']
+        # m = init_minuit(pa, guess)
+        # m.simplex(ncall=20)
+
+        guess = update_guess_values(guess, m)
+        pa = NormalizedPulseArea(self.nfits, BasicParams, self.cfg)
+        pa.target_parameters = ['xmax','nmax','corex','corey']
+        m = init_minuit(pa, guess)
+        m.simplex()
+
+        self.chi2ndof = pa.chi2(np.array([p.value for p in m.params]))/m.ndof
+
+        guess = update_guess_values(guess,m)
+        return guess
+    
+def dataframe_fit()
 
 if __name__ == '__main__':
-    # from datafiles import *
-    import matplotlib.pyplot as plt
-    from pathlib import Path
-    import CHASM as ch
-
-    plt.ion()
-    from utils import plot_event, plot_generator, get_data_files, preceding_noise_file
-    data_date_and_time = '20190504034237'
-    data_files = get_data_files(data_date_and_time)
-    noise_files = [preceding_noise_file(f) for f in data_files]
-    cfg = CounterConfig(data_files, noise_files)
-    pe = ProcessEvents(cfg, frozen_noise=False)
-    
-    corsika_directory = Path('he_corsika')
-    corsika_files = [p for p in corsika_directory.iterdir() if p.name.endswith('.dat')]
-    corsika_triggers = [pe.gen_nfits_from_ei(p) for p in corsika_files]
-    eventios = [ch.EventioWrapper(f) for f in corsika_files]
-    corsika_nmaxs = np.array([ei.nch.max() for ei in eventios])
-    corsika_xmaxs = np.array([ei.X[ei.nch.argmax()] for ei in eventios])
-
-    fp = FitProcedure(cfg)
-
-    fits = []
-    for corsika_nfits in corsika_triggers:
-        pf = NichePlane(corsika_nfits)
-        ty = tyro(corsika_nfits)
-        fits.append(fp.fit_procedure((ty,pf)))
-
-    fit_xmaxs = np.array([f[0].value for f in fits])
-    fit_nmaxs = np.array([f[1].value for f in fits])
-
-    xmax_diffs = corsika_xmaxs - fit_xmaxs
-    plt.figure()
-    plt.hist(xmax_diffs, bins=30)
-    plt.xlabel('thrown - fit (g/cm^2)')
-
-    nmax_diffs = np.log10(corsika_nmaxs) - np.log10(fit_nmaxs)
-    plt.figure()
-    plt.hist(nmax_diffs, bins=30)
-    plt.xlabel('log10(thrown) - log10(fit) (log10(eV))')
-    # s = AllSamples(real_nfits,BasicParams,cfg)
-    # plt.figure()
-    # plt.plot(s.real_values)
-    # testpars = pars.copy()
-    # testpars[2] -=.3
-    # o = s.get_output(testpars)
-    # plt.plot(o)
-
-    # ckv = s.ckv_from_params(pars)
-    # sigdict, times = ckv_signal_dict(ckv)
-    # times -= times[sigdict[s.biggest_counter].argmax()]
-
-    # for f in s.nfits:
-    #     wf = f.waveform
-    #     t = s.get_real_times(f)
-    #     plt.figure()
-    #     plt.title(f'{f.name}')
-    #     plt.plot(t,wf-wf[:400].mean())
-    #     plt.plot(times,sigdict[f.name])
-
-    # xmax = []
-    # nmax = []
-    # zenith = []
-    # azimuth = []
-    # corex = []
-    # corey = []
-    # chi2=[]
-    # for i in range(100):
-    #     real_nfits = pe.gen_nfits_from_event(ev)
-    #     pf = NichePlane(real_nfits)
-    #     ty = tyro(real_nfits)
-
-    #     guess = make_guess(ty, pf)
-    #     guess = LogXNParams.adjust_guess(guess)
-
-    #     pt = PeakTimes(real_nfits, LogXNParams, cfg)
-    #     pt.target_parameters = ['zenith','azimuth']
-    #     m = init_minuit(pt, guess)
-    #     m.tol = .0001
-    #     m.simplex()
-    #     tpguess = update_guess(m)
-
-    #     pw = PulseWidth(real_nfits, LogXNParams, cfg)
-    #     pw.target_parameters = ['xmax']
-    #     m = init_minuit(pw, tpguess)
-    #     m.simplex(ncall=10)
-    #     xmaxguess = update_guess(m)
-
-    #     pa = PulseArea(real_nfits, LogXNParams, cfg)
-    #     pa.target_parameters = ['nmax']
-    #     m = init_minuit(pa, xmaxguess)
-    #     m.simplex(ncall=10)
-    #     nmaxguess = update_guess(m)
-
-    #     pa = NormalizedPulseArea(real_nfits, LogXNParams, cfg)
-    #     pa.target_parameters = ['xmax','nmax','corex','corey']
-    #     m = init_minuit(pa, nmaxguess)
-    #     m.tol = .0001
-    #     m.simplex()
-    #     coreguess = update_guess(m)
-
-    #     # m = init_minuit(pw, coreguess)
-    #     # coreguess = update_guess(m)
-
-    #     at = AllTunka(real_nfits, LogXNParams, cfg)
-    #     at.target_parameters = ['xmax','nmax','zenith','azimuth','corex','corey']
-    #     m = init_minuit(at, coreguess)
-    #     m.simplex()
-
-    #     # curr_xmax = m.params['xmax'].value
-    #     # curr_nmax = m.params['nmax'].value
-    #     # curr_z = m.params['zenith'].value
-    #     # dz = np.deg2rad(1)
-    #     # curr_a = m.params['azimuth'].value
-    #     # curr_corex = m.params['corex'].value
-    #     # dcore = 2.
-    #     # curr_corey = m.params['corey'].value
-    #     # m.limits['xmax'] = (curr_xmax + np.log(.99), curr_xmax + np.log(1.01))
-    #     # m.limits['nmax'] = (curr_nmax + np.log(.99), curr_nmax + np.log(1.01))
-    #     # m.limits['zenith'] = (curr_z - dz, curr_z + dz)
-    #     # m.limits['azimuth'] = (curr_a - dz, curr_a + dz)
-    #     # m.limits['corex'] = (curr_corex - dcore, curr_corex + dcore)
-    #     # m.limits['corey'] = (curr_corey - dcore, curr_corey + dcore)
-    #     # m.migrad()
-    #     allguess = update_guess(m)
-
-    #     # p = Peak(real_nfits, BasicParams, cfg)
-    #     # m = init_minuit(p, allguess)
-
-    #     fitpars = [p.value for p in m.params]
-    #     e = LogXNParams.get_event(fitpars)
-    #     xmax.append(e.Xmax)
-    #     nmax.append(e.Nmax)
-    #     zenith.append(e.zenith)
-    #     azimuth.append(e.azimuth)
-    #     corex.append(e.corex)
-    #     corey.append(e.corey)
-    #     chi2.append(at.chi2(fitpars))
-
-    # plt.figure()
-    # plt.hist(xmax,bins=20)
-    # plt.title('xmax')
-
-    # plt.figure()
-    # plt.hist(nmax,bins=20)
-    # plt.title('nmax')
-
-    # plt.figure()
-    # plt.hist(corex,bins=20)
-    # plt.title('corex')
-
-    # plt.figure()
-    # plt.hist(corey,bins=20)
-    # plt.title('corey')
-
-    # plt.figure()
-    # plt.hist(zenith,bins=20)
-    # plt.title('zenith')
-
-    # plt.figure()
-    # plt.hist(azimuth,bins=20)
-    # plt.title('azimuth')
-
-    # plt.figure()
-    # plt.hist(chi2,bins=20)
-    # plt.title('chi2')
-
-    # ngrid = 11
-    # real_nfits = pe.gen_nfits_from_event(ev)
-    # pf = NichePlane(real_nfits)
-    # ty = tyro(real_nfits)
-
-    # guess_pars = pars.copy()
-    # # guess_pars[0] = 500.
-    # # guess_pars[1] = 2.e6
-    # # guess_pars[2] = pf.theta
-    # # guess_pars[3] = pf.phi
-    # guess_pars[4] = ty.core_estimate[0]
-    # guess_pars[5] = ty.core_estimate[1]
-
-    # # xmaxs = norm.rvs(size=ngrid,loc=500.,scale=10.)
-    # # nmaxs = norm.rvs(size=ngrid,loc=2.e6,scale=1.e5)
-    # # xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(xmaxs,nmaxs)]
-    # xmaxs = np.linspace(450.,550.,ngrid)
-    # nmaxs = np.linspace(1.e6,3.e6,ngrid)
-    # x,n = np.meshgrid(xmaxs,nmaxs)
-    # xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
-    # p = NormalizedPulseArea(real_nfits, BasicParams, cfg)
-    # xncosts = np.array(run_multiprocessing(p.chi2,xn,1))
-    # plt.figure()
-    # plt.contourf(xmaxs,nmaxs,xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(50)**2,cmap='binary')
-    # plt.colorbar()
-
-    # xmaxs = np.linspace(450.,550.,ngrid)
-    # nmaxs = np.linspace(1.e6,3.e6,ngrid)
-    # x,n = np.meshgrid(xmaxs,nmaxs)
-    # xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
-    # pa = PulseArea(real_nfits, BasicParams, cfg)
-    # xncosts = np.array(run_multiprocessing(pa.chi2,xn,1))
-    # plt.figure()
-    # plt.contourf(xmaxs,nmaxs,xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(10)**2,cmap='binary')
-    # plt.colorbar()
-
-    # dpos = 15.
-    # xs = np.linspace(pars[4]-dpos,pars[4]+dpos,ngrid)
-    # ys = np.linspace(pars[5]-dpos,pars[5]+dpos,ngrid)
-    # xc,yc = np.meshgrid(xs,ys)
-    # xy = [[*guess_pars[:4],xm,ym,*guess_pars[-3:]] for xm,ym in zip(xc.flatten(),yc.flatten())]
-    # npa = PulseArea(real_nfits, BasicParams, cfg)
-    # xycosts = np.array(run_multiprocessing(npa.chi2,xy,1))
-    # plt.figure()
-    # plt.contourf(xs,ys,xycosts.reshape(ngrid,ngrid),xycosts.min() + np.arange(10)**2, cmap = 'binary')
-    # plt.xlabel('corex')
-    # plt.ylabel('corey')
-    # plt.colorbar(label='chi_square')
-
-    # dang = np.deg2rad(2.)
-    # ts = np.linspace(pars[2]-np.deg2rad(1),pars[2]+np.deg2rad(1),ngrid)
-    # ps = np.linspace(pars[3]-np.deg2rad(1),pars[3]+np.deg2rad(1),ngrid)
-    # t,p = np.meshgrid(ts,ps)
-    # tp = [[*guess_pars[:2],tm,pm,*guess_pars[4:]] for tm,pm in zip(t.flatten(),p.flatten())]
-    # pt = PeakTimes(real_nfits, BasicParams, cfg)
-    # tpcosts = np.array(run_multiprocessing(pt.chi2,tp,1))
-    # plt.figure()
-    # plt.contourf(np.rad2deg(ts),np.rad2deg(ps),tpcosts.reshape(ngrid,ngrid),tpcosts.min() + np.arange(10)**2,cmap='binary')
-    # plt.xlabel('zenith')
-    # plt.ylabel('azimuth')
-    # plt.colorbar(label='chi_square')
+    ev_df_pkl = Path(sys.argv[1])
 
 
-
-    # parlist = [
-    #     FitParam('xmax', 600., (300., 600.), 50., False),
-    #     FitParam('nmax', 1.e7, (1.e5, 1.e7), 1.e5, False),
-    #     FitParam('zenith', pars[2], (pf.theta -.1, pf.theta +.1), np.deg2rad(1.), True),
-    #     FitParam('azimuth', pars[3], (pf.phi -.1, pf.phi +.1), np.deg2rad(1.), True),
-    #     FitParam('corex',ty.core_estimate[0],(ty.core_estimate[0] - 50.,ty.core_estimate[0] + 50.), 5., True),
-    #     FitParam('corey',ty.core_estimate[1],(ty.core_estimate[1] - 50.,ty.core_estimate[1] + 50.), 5., True),
-    #     FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1., True),
-    #     FitParam('x0',0.,(0,100),1,True),
-    #     FitParam('lambda',70., (0,100),1,True)
-    # ]
-
-    # ls = LeastSquares(np.arange(len(ef.nfits)),ef.pas,ef.pa_error,ef.pamodel,verbose=1)
-    # guess_pars = [f.value for f in parlist]
-    # names = [f.name for f in parlist]
-    # m = Minuit(ls,guess_pars,name=names)
-
-    # for f in parlist:
-    #     m.limits[f.name] = f.limits
-    #     m.errors[f.name] = f.error
-
-    # m.fixed = True
-    # m.fixed['xmax'] = False
-    # m.fixed['nmax'] = False
-    # m.fixed['corex'] = False
-    # m.fixed['corey'] = False
-    # m.tol = .001
-    # m = m.simplex()
-
-    # xmaxs = np.linspace(400.,600.,ngrid)
-    # nmaxs = np.linspace(1.e6,3.e6,ngrid)
-    # x,n = np.meshgrid(xmaxs,nmaxs)
-    # xn = [[xm, nm,*guess_pars[2:]] for xm,nm in zip(x.flatten(),n.flatten())]
-    # xncosts = np.array(run_multiprocessing(ef.chi_square,xn,1))
-    # plt.figure()
-    # plt.contourf(xmaxs,nmaxs,xncosts.reshape(ngrid,ngrid),xncosts.min() + np.arange(20)**2)
-    # plt.xlabel('xmax')
-    # plt.ylabel('nmax')
-    # plt.semilogy()
-    # plt.colorbar(label='chi_square')
-
-    # xmax = []
-    # nmax = []
-    # zenith = []
-    # azimuth = []
-    # corex = []
-    # corey = []
-    # chi2=[]
-
-    # for i in range(100):
-    #     real_nfits = pe.gen_nfits_from_event(ev)
-    #     ef = EventFit(real_nfits, LogXNCoreParams, cfg)
-    #     pf = NichePlane(real_nfits)
-    #     ty = tyro(real_nfits)
-
-
-    #     parlist = [
-    #         FitParam('xmax', np.log(300.), (np.log(300.), np.log(600.)), np.log(50.), False),
-    #         FitParam('nmax+xmax', np.log(1.e5+300.), (np.log(1.e5+300.), np.log(1.e7+600.)), np.log(1.e5), False),
-    #         FitParam('zenith', pf.theta, (pf.theta -.1, pf.theta +.1), np.deg2rad(1.), True),
-    #         FitParam('azimuth', pf.phi, (pf.phi -.1, pf.phi +.1), np.deg2rad(1.), True),
-    #         FitParam('corex',np.log(ty.core_estimate[0]),(np.log(ty.core_estimate[0] - 50.),np.log(ty.core_estimate[0] + 50.)), 5., True),
-    #         FitParam('corey',np.log(-ty.core_estimate[1]),(np.log(-ty.core_estimate[1] - 50.),np.log(-ty.core_estimate[1] + 50.)), 5., True),
-    #         FitParam('corez',ty.core_estimate[2],(ty.core_estimate[2] - 1.,ty.core_estimate[2] + 1.), 1., True),
-    #         FitParam('x0',0.,(0,100),1,True),
-    #         FitParam('lambda',70., (0,100),1,True)
-    #     ]
-
-    #     ls = LeastSquares(np.arange(len(ef.nfits)),ef.real_pulse_widths,ef.real_pulse_width_error,ef.pwmodel,verbose=1)
-    #     guess_pars = [f.value for f in parlist]
-    #     names = [f.name for f in parlist]
-    #     m = Minuit(ls,guess_pars,name=names)
-
-    #     for f in parlist:
-    #         m.limits[f.name] = f.limits
-    #         m.errors[f.name] = f.error
-
-    #     m.fixed = True
-    #     m.fixed['zenith'] = False
-    #     m.fixed['azimuth'] = False
-    #     m = m.simplex()
-
-    #     m.fixed = True
-    #     m.fixed['xmax'] = False
-    #     m.fixed['nmax+xmax'] = False
-    #     m.fixed['corex'] = False
-    #     m.fixed['corey'] = False
-    #     # m.fixed['corez'] = False
-    #     m.tol=(.001)
-    #     m = m.simplex()
-
-    #     m.fixed = True
-    #     m.fixed['xmax'] = False
-    #     m.fixed['nmax+xmax'] = False
-
-    #     # m.values['xmax'] = np.log(600.)
-    #     # m.values['nmax+xmax'] = np.log(1.e7 + 600.)
-    #     m = m.simplex()
-
-    #     m.fixed = True
-    #     # m.fixed['xmax'] = False
-    #     # m.fixed['nmax+xmax'] = False
-    #     m.fixed['corex'] = False
-    #     m.fixed['corey'] = False
-    #     # m.fixed['corez'] = False
-    #     m.tol=(.001)
-    #     m = m.simplex()
-
-    #     m.fixed = True
-    #     m.fixed['xmax'] = False
-    #     m.fixed['nmax+xmax'] = False
-    #     m.fixed['corex'] = False
-    #     m.fixed['corey'] = False
-    #     # m.fixed['zenith'] = False
-    #     # m.fixed['azimuth'] = False
-    #     # m.fixed['corez'] = False
-    #     m.tol=(.001)
-    #     m = m.simplex()
-
-
-    #     pars = np.array([par.value for par in m.params])
-    #     e = get_event(pars)
-    #     xmax.append(e.Xmax)
-    #     nmax.append(e.Nmax)
-    #     zenith.append(e.zenith)
-    #     azimuth.append(e.azimuth)
-    #     corex.append(e.corex)
-    #     corey.append(e.corey)
-    #     chi2.append(ef.chi_square(pars))
-
-    # plt.figure()
-    # plt.hist(xmax,bins=50)
-    # plt.title('xmax')
-
-    # plt.figure()
-    # plt.hist(nmax,bins=50)
-    # plt.title('nmax')
-
-    # plt.figure()
-    # plt.hist(corex,bins=50)
-    # plt.title('corex')
-
-    # plt.figure()
-    # plt.hist(corey,bins=50)
-    # plt.title('corey')
-
-    # plt.figure()
-    # plt.hist(zenith,bins=50)
-    # plt.title('zenith')
-
-    # plt.figure()
-    # plt.hist(azimuth,bins=50)
-    # plt.title('azimuth')
-
-    # plt.figure()
-    # plt.hist(chi2,bins=50)
-    # plt.title('chi2')
 
 
 

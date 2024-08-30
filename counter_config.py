@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
+import os
 
 from config import COUNTER_POSITIONS_DICT, COUNTER_QE, COUNTER_PMT_DELAY, COUNTER_FADC_PER_PHOTON, NSBG, TEL_RADII
 from utils import read_niche_file, read_noise_file, get_data_files, preceding_noise_files
@@ -176,6 +177,7 @@ def init_config(ts: str) -> CounterConfig:
     '''
     alldata = get_data_files(ts)
     allnsdata = [file for file in alldata if (file.name.endswith('.bin') and file.name[-5].isnumeric())]
+    allnsdata = [file for file in allnsdata if not os.stat(file).st_size == 0]
     ns_data_part = [file for file in allnsdata if file.name[:-5] == ts[:-1]]
     noise_files = [preceding_noise_files(file) for file in ns_data_part]
     closed_noise_files = [tup[0] for tup in noise_files]

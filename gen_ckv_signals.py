@@ -6,6 +6,7 @@ from pathlib import Path
 from config import photon_time_bins, CXF_ALTITUDE, MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS, CHASM_MESH, COUNTER_POSITIONS, COUNTER_POSITIONS_DICT
 from counter_config import CounterConfig
 from angular_dependence import filter
+from showlib import LibraryShower
 
 @dataclass
 class Event:
@@ -58,6 +59,49 @@ class Event:
             return False
 
 @dataclass
+class LibraryEvent:
+    '''This is the container for a full event from the shower library.
+    '''
+    shower: LibraryShower
+    zenith: float
+    azimuth: float
+    corex: float
+    corey: float
+    corez: float
+
+    def __post_init__(self) -> None:
+        if self.zenith < 0.:
+            self.zenith += 2*np.pi
+        if self.zenith > 2*np.pi:
+            self.zenith -= 2*np.pi
+        if self.azimuth < 0.:
+            self.azimuth += 2*np.pi
+        if self.azimuth > 2*np.pi:
+            self.azimuth -= 2*np.pi
+
+    @property
+    def core_altitude(self) -> float:
+        '''This is the altitude of the core.
+        '''
+        return CXF_ALTITUDE + self.corez
+    
+    @property
+    def needs_curved_atm(self) -> bool:
+        '''This is for whether the event needs a curved atmosphere correction.
+        '''
+        if self.zenith > np.radians(60.):
+            return True
+        else:
+            return False
+        
+    @property
+    def core_location(self) -> np.ndarray:
+        '''This is a vector to the core location in cxf coords.
+        '''
+        return np.array([self.corex, self.corey, self.corez])
+
+
+@dataclass
 class TelescopeDefinition:
     '''This is the container for information about the telescopes location.
     '''
@@ -74,9 +118,9 @@ def cut_photon_zeniths(sig: ch.ShowerSignal, max_zenith = np.pi/2) -> np.ndarray
     '''This function sets the value of each photon bunch arriving with a zenith
     angle greater than max_zenith to zero.
     '''
-    # survival_fractions = filter(np.arccos(sig.cos_theta))
+    survival_fractions = filter(np.arccos(sig.cos_theta))
     sig.photons[sig.cos_theta[:,np.newaxis,:] < np.cos(max_zenith)] = 0.
-    return sig.photons #* survival_fractions
+    return sig.photons * survival_fractions
 
 def extract_signal(sim: ch.ShowerSimulation,att: bool) -> ch.ShowerSignal:
     '''This function is a wrapper for the run method of the CHASM sim.
@@ -115,7 +159,30 @@ class GetCkv:
         # return photons, sig.times
         return CherenkovOutput(photons, sig.times, self.cfg)
 
-def get_ckv(event: Event, cfg: CounterConfig, att: bool = True) -> CherenkovOutput:
+class GetShowlibCkv:
+    def __init__(self, cfg: CounterConfig) -> None:
+        self.cfg = cfg
+        self.sim = ch.ShowerSimulation()
+        self.tel_def = TelescopeDefinition(cfg.positions_array, cfg.radii)
+
+    def run(self, event: LibraryEvent) -> CherenkovOutput:
+        '''This function adds elements to the CHASM sim, runs it, and returns 
+        the photon counts and times.
+        '''
+        sim = ch.ShowerSimulation()
+        sim.add(ch.UserShower(event.shower.depths,event.shower.nch))
+        sim.add(ch.DownwardAxis(event.zenith, 
+                                event.azimuth, 
+                                event.core_altitude,
+                                event.needs_curved_atm))
+        sim.add(ch.SphericalCounters(self.tel_def.shift_counters(event.core_location),
+                                        self.tel_def.radii))
+        sim.add(ch.Yield(MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS))
+        sig = extract_signal(sim,True)
+        photons = cut_photon_zeniths(sig, self.cfg.max_photon_zenith)
+        return CherenkovOutput(photons, sig.times, self.cfg)
+
+def get_ckv(event: Event, cfg: CounterConfig) -> CherenkovOutput:
     '''This function adds elements to the CHASM sim, runs it, and returns 
     the photon counts and times.
     '''
@@ -129,10 +196,27 @@ def get_ckv(event: Event, cfg: CounterConfig, att: bool = True) -> CherenkovOutp
     sim.add(ch.SphericalCounters(tel_def.shift_counters(event.core_location),
                                     tel_def.radii))
     sim.add(ch.Yield(MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS))
-    sig = extract_signal(sim,att)
+    sig = extract_signal(sim,True)
     photons = cut_photon_zeniths(sig, cfg.max_photon_zenith)
     # photons = sig.photons
     # return photons, sig.times
+    return CherenkovOutput(photons, sig.times, cfg)
+
+def get_showlib_ckv(tup: tuple[LibraryEvent,CounterConfig]) -> CherenkovOutput:
+    event = tup[0]
+    cfg = tup[1]
+    tel_def = TelescopeDefinition(cfg.positions_array, cfg.radii)
+    sim = ch.ShowerSimulation()
+    sim.add(ch.UserShower(event.shower.depths,event.shower.nch))
+    sim.add(ch.DownwardAxis(event.zenith, 
+                            event.azimuth, 
+                            event.core_altitude,
+                            event.needs_curved_atm))
+    sim.add(ch.SphericalCounters(tel_def.shift_counters(event.core_location),
+                                    tel_def.radii))
+    sim.add(ch.Yield(MIN_WAVELENGTH, MAX_WAVELENGTH, N_WAVELENGTH_BINS))
+    sig = extract_signal(sim,True)
+    photons = cut_photon_zeniths(sig, cfg.max_photon_zenith)
     return CherenkovOutput(photons, sig.times, cfg)
 
 LIST_POSITIONS = {}

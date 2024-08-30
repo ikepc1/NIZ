@@ -3,7 +3,7 @@ import numpy as np
 from pathlib import Path
 from scipy.signal import argrelextrema
 
-from config import NICHE_TIMEBIN_SIZE, WAVEFORM_SIZE
+from config import NICHE_TIMEBIN_SIZE, WAVEFORM_SIZE, N_SIM_TRIGGER_WINDOWS
 from utils import read_noise_file
 
 def noise_fft(noise_array: np.ndarray) -> np.ndarray:
@@ -126,7 +126,7 @@ def add_glitches(real_fadc_array: np.ndarray, sim_fadc_array: np.ndarray, cut_pr
         sim_with_glitches[up_for_change_mask] = up_for_change
         return sim_with_glitches
 
-def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> np.ndarray:
+def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> tuple[np.ndarray,np.ndarray]:
     '''This function is the procedure for generating a simulated noise trace 
     for a given noise file.
     '''
@@ -166,11 +166,74 @@ def random_noise(noisefile: Path, N_windows: int = 1, cut_prob: float = 0) -> np
     fadc_counts_glitched = add_glitches(noise_array.flatten(),fadc_counts,cut_prob=cut_prob)
     return fadc_counts_glitched, fadc_counts
 
+# class NoiseGen:
+#     '''This class save the fft of the noise so random traces can be repeatedly generated.
+#     '''
+#     def __init__(self,noisefile: Path) -> None:
+#         self.noisefile = noisefile
+#         #Read noise file and take its ft
+#         self.noise_array = read_noise_file(noisefile)
+#         self.ft = np.fft.fft(self.noise_array)
+#         self.freqs = freq_mhz()
+#         self.phase_angles = np.angle(self.ft)
+#         #Find index of murmur mode
+#         self.im = argrelextrema(np.abs(self.ft).mean(axis=0), np.greater)[0][0]
+#         #Shift phase angles so the murmur term in ft is zero phase
+#         self.shifts = phase_shift(self.phase_angles,self.im)
+#         self.shifted_angles = self.phase_angles - self.shifts
+    
+#     def random_noise(self, N_windows: int = 1, cut_prob: float = 0) -> tuple[np.ndarray,np.ndarray]:
+#         '''This function is the procedure for generating a simulated noise trace 
+#         for the class' noise file.
+#         '''
+#         #Create output array
+#         noise_output =np.empty(WAVEFORM_SIZE*N_windows)
+
+#         #Generate random phases from ecdfs created from shifted phases in data, unshift
+#         random_phases, unshifts = random_phases_from_ecdf(self.shifted_angles, self.shifts)
+#         # random_phases = np.random.rand(shifted_angles.shape[1]) *2 * np.pi
+#         # random_phases += unshifts
+
+#         #Generate random power spectrum values from ecdfs created from data
+#         gen_ft = random_values_from_ecdf(np.abs(self.ft),N_windows)
+
+#         #Take only the phases for the positive frequencies
+#         random_phases = random_phases[self.freqs>0]
+#         #Loop through the desired number of trigger windows to stack
+#         for i in range(N_windows):
+#             starti = i*WAVEFORM_SIZE
+#             #dump inverse fft of random phases and power spectrum into output array
+#             noise_output[starti:starti + WAVEFORM_SIZE] = random_noise_snapshot(gen_ft[i], random_phases)
+        
+#         fadc_counts = np.round(noise_output).astype('int')
+#         fadc_counts_glitched = add_glitches(self.noise_array.flatten(),fadc_counts,cut_prob=cut_prob)
+#         return fadc_counts_glitched, fadc_counts
+
+class NoiseGen:
+    '''This class save the fft of the noise so random traces can be repeatedly generated.
+    '''
+    def __init__(self,noisefile: Path) -> None:
+        self.noisefile = noisefile
+        self.long_trace, _ = random_noise(noisefile, 10*N_SIM_TRIGGER_WINDOWS)
+
+    def random_noise(self, N_windows: int = 1) -> tuple[np.ndarray,None]:
+        '''This function is the procedure for generating a simulated noise trace 
+        for the class' noise file.
+        '''
+        return_trace_length = N_windows*WAVEFORM_SIZE
+        maxi = len(self.long_trace) - return_trace_length
+        starti = np.random.randint(0,maxi)
+        return self.long_trace[starti:starti+return_trace_length], None
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.ion()
     p_open = Path('/home/isaac/niche_data/20190509/bell/20190509060703.bg.bin')
     p_closed = Path('/home/isaac/niche_data/20190509/bell/20190509060628.bg.bin')
+
+    gen_open = NoiseGen(p_open)
+    gen_closed = NoiseGen(p_closed)
+
     noise_open = read_noise_file(p_open)
     noise_closed = read_noise_file(p_closed)
     ft_o = noise_fft(noise_open)
@@ -180,24 +243,33 @@ if __name__ == '__main__':
     sim_noise,_ = random_noise(p_open)
     sim_noise_closed,_ = random_noise(p_closed)
 
-    
+    gen_sim_noise,_ = gen_open.random_noise()
+    gen_sim_noise_closed,_ = gen_closed.random_noise()
 
     ft_s = np.abs(np.fft.fft(sim_noise))
     ft_sc = np.abs(np.fft.fft(sim_noise_closed))
+
+    gen_ft_s = np.abs(np.fft.fft(gen_sim_noise))
+    gen_ft_sc = np.abs(np.fft.fft(gen_sim_noise_closed))
     # r = random_noise(p_open,5)
 
     plt.figure()
     plt.plot(freq[freq>0.], ft_o[freq>0.], label = 'noise open', c='k', linestyle='solid')
     plt.plot(freq[freq>0.], ft_c[freq>0.], label = 'noise closed', c='k', linestyle='dashed')
+
     # plt.plot(freq[freq>0.], ft_s[freq>0.], label = 'noise sim')
     # plt.plot(freq[freq>0.], ft_sc[freq>0.], label = 'noise sim closed')
+    # plt.plot(freq[freq>0.], gen_ft_s[freq>0.], label = 'gen noise sim')
+    # plt.plot(freq[freq>0.], gen_ft_sc[freq>0.], label = 'gen noise sim closed')
     
     n_to_avg = 4096
     prob= 0.
     traces_to_avg = np.empty((n_to_avg,WAVEFORM_SIZE))
-    long_trace,_ = random_noise(p_open, N_windows=n_to_avg,cut_prob=prob)
+    long_trace,_ = gen_open.random_noise(N_windows=n_to_avg,cut_prob=prob)
+    # long_trace,_ = random_noise(p_open, N_windows=n_to_avg,cut_prob=prob)
     traces_to_avg_c = np.empty((n_to_avg,WAVEFORM_SIZE))
-    long_trace_c,_ = random_noise(p_closed, N_windows=n_to_avg,cut_prob=prob)
+    long_trace_c,_ = gen_closed.random_noise(N_windows=n_to_avg,cut_prob=prob)
+    # long_trace_c,_ = random_noise(p_closed, N_windows=n_to_avg,cut_prob=prob)
     for i in range(traces_to_avg.shape[0]):
         starti = i*WAVEFORM_SIZE
         # starti = np.random.randint(0,long_trace_c.size-WAVEFORM_SIZE)

@@ -1,7 +1,8 @@
 from pathlib import Path
 import numpy as np
 
-from config import CounterConfig, RAW_DATA_PATH
+from config import RAW_DATA_PATH
+from counter_config import CounterConfig
 from utils import read_niche_file
 
 def ontime(cfg: CounterConfig) -> np.timedelta64:

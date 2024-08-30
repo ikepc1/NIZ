@@ -72,7 +72,8 @@ class NicheFit(NicheRaw):
     
     @cached_property
     def start_rise(self) -> int:
-        level = 2 * self.baseline_error + self.baseline
+        level = 3 * self.baseline_error + self.baseline
+        # level = self.waveform.max() / 4.
         peak = self.waveform.argmax()
         before_reversed = self.waveform[:peak][::-1]
         n_samples_before = (before_reversed<level).argmax()
@@ -81,7 +82,8 @@ class NicheFit(NicheRaw):
     
     @cached_property
     def end_fall(self) -> int:
-        level = 3 * self.baseline_error + self.baseline
+        level = 2 * self.baseline_error + self.baseline
+        # level = self.waveform.max() / 4.
         peak = self.waveform.argmax()
         after = self.waveform[peak:]
         n_samples_after = (after<level).argmax()

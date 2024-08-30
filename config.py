@@ -9,6 +9,7 @@ from atmosphere import CorsikaAtmosphere, Atmosphere
 RAW_DATA_PATH = Path('/home/isaac/niche_data/')
 NIZ_DIRECTORY = Path('/home/isaac/NIZ/')
 NIGHTSKY_DF_PATH = NIZ_DIRECTORY / 'nightsky_dfs/'
+MC_DF_PATH = NIZ_DIRECTORY / 'mc_dfs/'
 
 #niche array params
 CXF_ALTITUDE = 1500.
@@ -24,12 +25,13 @@ TEL_RADII = .0508
 
 #MC Parameters
 N_ENERGY_BINS = 1
-MIN_LE = 16.
-MAX_LE = 17.
+MIN_LE = 14.
+MAX_LE = 16.
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
-N_THROWN = 64
-THROW_RADIUS = 0. #meters per 10^12
+N_THROWN = 10
+THROW_RADIUS = 500. #meters per 10^12
+SHOWLIB_DRAWER_SIZE = 512
 
 #CHASM inputs
 MIN_WAVELENGTH = 300.
