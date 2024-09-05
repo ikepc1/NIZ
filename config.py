@@ -25,12 +25,13 @@ TEL_RADII = .0508
 
 #MC Parameters
 N_ENERGY_BINS = 1
-MIN_LE = 14.
+MIN_LE = 13.8
 MAX_LE = 16.
+SPECTRUM = -2
 E_BIN_EDGES = np.linspace(MIN_LE,MAX_LE,N_ENERGY_BINS+1)
 E_BINS = E_BIN_EDGES[:-1] + np.diff(E_BIN_EDGES)/2
 N_THROWN = 10
-THROW_RADIUS = 500. #meters per 10^12
+THROW_RADIUS = 1000. #meters per 10^12
 SHOWLIB_DRAWER_SIZE = 512
 
 #CHASM inputs
@@ -101,6 +102,21 @@ COUNTER_POSITIONS_DICT = { 'curie':(392.8,-711.4,-24),
                       'rossi':(286.0,-610.4,-21),
                       'rubin':(397.3,-808.0,-26)}
 COUNTER_POSITIONS = np.array(list(COUNTER_POSITIONS_DICT.values()))
+
+POSITIONS_COUNTER_DICT = {(392.8,-711.4,-24):'curie',
+                      (574.2,-607.3,-26):'dirac',
+                      (489.2,-514.0,-23):'einstein',
+                      (577.4,-720.0,-27):'feynman',
+                      (489.6,-821.0,-27):'meitner',
+                      (379.5,-619.1,-26):'newton',
+                      (389.1,-508.5,-25):'noether',
+                      (489.2,-615.1,-29):'rutherford',
+                      (290.4,-508.3,-26):'wu',
+                      (483.0,-709.7,-25):'yukawa',
+                      (283.3,-708.1,-24):'bardeen',
+                      (592.0,-823.6,-23):'bell',
+                      (286.0,-610.4,-21):'rossi',
+                      (397.3,-808.0,-26):'rubin'}
 
 COUNTER_QE = {'curie':     .75, #photocathode quantum efficiency
               'dirac':     .75,

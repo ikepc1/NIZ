@@ -5,7 +5,7 @@ from scipy.optimize import curve_fit
 # from datetime import datetime
 from dataclasses import dataclass
 
-from config import COUNTER_POSITIONS
+from config import COUNTER_POSITIONS, POSITIONS_COUNTER_DICT
 from niche_fit import NicheFit, NicheRaw
 
 def hex_to_s(hex_ts: str) -> float:
@@ -74,15 +74,23 @@ class TyroFit:
         is_y_contained = self.counter_pos[:,1].min() < pos_biggest[1] < self.counter_pos[:,1].max()
         return is_x_contained and is_y_contained
 
+def has_core(ty: TyroFit) -> bool:
+    '''This function estimates if an event truly has a contained core.
+    '''
+    pos_biggest = tuple(ty.counter_pos[ty.pa.argmax()])
+    name_of_biggest = POSITIONS_COUNTER_DICT[pos_biggest]
+    return name_of_biggest in ['newton', 'rutherford', 'yukawa', 'curie']
 
-def tyro(event: list[NicheFit]) -> TyroFit:
+
+def tyro(event: list[NicheFit], gains: dict[str,float]) -> TyroFit:
     '''This function returns the Tyro estimate for the axis position.
     '''
-    PAs = np.array([fit.intsignal for fit in event])
+    #calculate pulse areas in terms of photons
+    PAs = np.array([fit.intsignal/gains[fit.name] for fit in event])
     # times = np.array([fit.trigtime() for fit in event])
     times = np.array([hex_to_s(fit.__str__()[-8:]) for fit in event])
     positions = np.array([fit.position for fit in event])
-    sig = 1 / (PAs/PAs.sum())
+    # sig = 1 / (PAs/PAs.sum())
     times = np.array(times - times.min())
     return TyroFit(times, PAs, positions)
 

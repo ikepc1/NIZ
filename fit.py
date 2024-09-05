@@ -1007,10 +1007,32 @@ class FitProcedure:
         guess = update_guess_values(guess,m)
         return guess
     
-def dataframe_fit()
+def dataframe_fit(df: pd.DataFrame) -> None:
+    '''This function fits each event in the dataframe and adds the fit values to it.
+    '''
+    dictlist = []
+    for _, row in df.iterrows():
+        if not row['Fit'].has_contained_core:
+            continue
+        cfg = row['config']
+
+        nfits = row[cfg.active_counters][row[cfg.active_counters].notna()].to_list()
+        if len(nfits) >= 5:
+            # guess = row['guess']
+            fp = FitProcedure(cfg,nfits)
+            guess = fp.fit_procedure(make_guess(row['Fit'],row['Plane_Fit'],cfg))
+            for par in guess:
+                if par.name in df.columns:
+                    df[par.name] = par.value
 
 if __name__ == '__main__':
+    from pathlib import Path
+    from utils import save_df
+
     ev_df_pkl = Path(sys.argv[1])
+    df = pd.read_pickle(ev_df_pkl)
+    dataframe_fit(df)
+    save_df(df,'fit_' + ev_df_pkl.name, ev_df_pkl.parent)
 
 
 

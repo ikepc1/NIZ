@@ -117,7 +117,7 @@ def init_niche_nightsky_df(cfg: CounterConfig) -> pd.DataFrame:
         row = empty_row(cfg)
         for nraw in match:
             row[nraw.name] = nraw
-        row['Fit'] = tyro(list(match))
+        row['Fit'] = tyro(list(match),cfg.gains)
         row['Plane_Fit'] = NichePlane(list(match))
         row['weather'] = get_weather(match.tolist(), weather)
         row['guess'] = make_guess(row['Fit'],row['Plane_Fit'],cfg)
